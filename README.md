@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PayShield
 
-## Getting Started
+A premium, Full-Stack fintech web application delivering a fraud-aware donation and creator platform. PayShield is architected using bleeding-edge stack dynamics with a dual-tier separation of concerns, providing extreme scalability, rigorous backend token rotation authentication, and high-fidelity 3D Split-Screen interactive React interfaces.
 
-First, run the development server:
+## 🚀 Technology Stack
 
+### Frontend Architecture
+- **Framework**: Next.js 14 (App Router enabled)
+- **Styling**: Tailwind CSS & Vanilla CSS (Vibrant Glassmorphism, premium dark modes)
+- **UI Components**: Shadcn UI & Base UI
+- **Animations**: Framer Motion (for massive 3D model rotation and element orchestration)
+- **State & Forms**: React Hook Form with Zod schema validation
+- **Routing**: Client-side URL param tracking & strictly hard-redirected Context Providers
+
+### Backend Architecture
+- **Core Server**: Node.js & Express.js (RESTful API)
+- **Database**: PostgreSQL (Containerized via Docker on local port 5433)
+- **ORM**: Prisma (Fully typed edge-to-edge schemas for models like `User` and `Session`)
+- **Security**: 
+  - `bcryptjs` hashing for all passwords.
+  - Custom JWT Rotation Strategy allowing infinite session persistence across `accessToken` and HttpOnly `refreshToken` cookies securely.
+  - Strict Cross-Origin (CORS) whitelisting properly piped through a direct API proxy loop in Next.js config.
+
+---
+
+## 🎨 User Interface & Design
+
+The frontend strictly enforces a **Premium SaaS Identity** (`#0A0F1E` backgrounds, `blue-500/40` ambient glows, noise texture overlaps). 
+
+**1. The Split-Screen Authentication Flow:**
+Whenever a user lands on the site natively, they encounter the `SplitAuthLayout`. 
+- **Left Panel**: Floating typography and real-time fraud metrics (`₹2.4Cr Protected`, `94% Fraud blocked`), creating an immersive trust-based ambiance. 
+- **Right Panel**: Glassmorphism authentication blocks equipped with active state retention, password strength identifiers, and responsive tab swapping.
+
+**2. The Central Dashboard:**
+An integrated application shell holding the authenticated state.
+- Features a side navigation array (`Home`, `Transactions`, `Settings`).
+- Includes a fully dynamic `SidebarProfile` that reacts to the underlying specific global UI Context, permanently mounting your registered name / email in the bottom-left layout to eliminate hardcoding.
+
+---
+
+## ⚙️ Core System Features
+
+| Feature | Description | Status |
+| :--- | :--- | :---: |
+| **User Sign Up** | End-to-end `User` creation via Zod inputs through to Postgres. Validates duplicate emails. | ✅ Live |
+| **User Login** | JWT Payload assignment mapping the specific Role & session ID to an HTTP-Only secure cookie. | ✅ Live |
+| **Refresh Engine** | Invisible API endpoint returning fresh JWT `accessTokens`. Triggered by Next.js component mounts proxying the secure cookie seamlessly. | ✅ Live |
+| **Interactive Dashboard** | A fully enclosed UI route layout for authenticated manipulation of PayShield instances. | ✅ Live |
+| **Visual Core** | Animated 3D gradients and glowing metric widgets completely overriding default Tailwind styles. | ✅ Live |
+
+---
+
+## 🛠️ Step-by-Step Local Setup
+
+To run PayShield perfectly locally on your machine, launch the backend database first so Prisma has context, then run both servers simultaneously.
+
+### 1. The Database (Docker)
+Since local Windows environments occasionally bind ghostly generic PostgreSQL instances to default ports, PayShield handles its core database natively on **Port 5433** to escape port conflicts permanently.
+
+Wipe any old local instances (if any exist) and boot up the persistent database terminal:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker rm -f payshield-postgres-clean
+docker volume prune -f
+docker run --name payshield-postgres-clean -e POSTGRES_PASSWORD=mysecret123 -p 5433:5432 -d postgres
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. The Backend Server
+Launch the main Prisma connection & Express engine:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cd backend
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Ensure `backend/.env` is identical to:
+```env
+DATABASE_URL="postgresql://postgres:mysecret123@localhost:5433/payshield?schema=public"
+JWT_SECRET="payshield_dev_access_secret_min_32_chars!!"
+JWT_REFRESH_SECRET="payshield_dev_refresh_secret_min_32!"
+PORT=5000
+FRONTEND_ORIGIN="http://localhost:3000"
+NODE_ENV=development
+```
 
-## Learn More
+Push the Prisma Schema directly into the DB:
+```bash
+npx prisma db push
+```
 
-To learn more about Next.js, take a look at the following resources:
+Start the Engine:
+```bash
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 3. The Frontend Client
+Start your Next.js application side-by-side with your backend:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+cd frontend
+```
 
-## Deploy on Vercel
+*Note: In `frontend/next.config.mjs`, all traffic explicitly pointed at `/api/*` is natively rewritten as an invisible backend proxy intercepting into `http://localhost:5000/api/*`. This perfectly circumnavigates cross-port CORS blocks built into modern browsers like Google Chrome!*
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Start the React loop:
+```bash
+npm run dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+> **The system is now fully live! Navigate to `http://localhost:3000`, click Register, and witness the full stack flow!**
