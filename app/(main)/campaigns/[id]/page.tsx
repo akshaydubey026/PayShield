@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Clock, ShieldCheck, Target, Users } from "lucide-react";
-import { getCampaignById, type Campaign, type Donation } from "@/lib/campaigns";
+import { ShieldCheck, Target, Users } from "lucide-react";
+import { getCampaignById, type Campaign, type Donation, verifyDonation } from "@/lib/campaigns";
 import { ProgressBar } from "@/components/campaigns/ProgressBar";
 import { DonateModal } from "@/components/campaigns/DonateModal";
 import { useAuth } from "@/lib/auth";
+import { toast } from "sonner";
 
 const getCategoryImage = (category: string): string => {
   const normalized = category?.trim().toLowerCase();
@@ -24,10 +25,12 @@ const getCategoryImage = (category: string): string => {
 
 export default function CampaignDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const { ready } = useAuth();
   const [campaign, setCampaign] = useState<(Campaign & { donations: Donation[] }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
 
   const fetchCampaign = () => {
     getCampaignById(params.id as string)
@@ -41,6 +44,49 @@ export default function CampaignDetailPage() {
   useEffect(() => {
     fetchCampaign();
   }, [params.id]);
+
+  useEffect(() => {
+    const sessionId = searchParams.get("session_id");
+    const canceled = searchParams.get("payment") === "cancel";
+
+    if (sessionId) {
+      let cancelled = false;
+
+      void (async () => {
+        try {
+          await verifyDonation(sessionId);
+          if (cancelled) return;
+          setShowSuccessBanner(true);
+          toast.success("Thank you! Your donation was received successfully 🎉");
+          fetchCampaign();
+          const t = setTimeout(() => {
+            fetchCampaign();
+          }, 1500);
+          window.history.replaceState(null, "", window.location.pathname);
+          return () => clearTimeout(t);
+        } catch (error) {
+          console.error("Failed to verify Stripe session after redirect", error);
+          if (!cancelled) {
+            toast.error("Payment completed, but confirmation is still pending.");
+            fetchCampaign();
+            window.history.replaceState(null, "", window.location.pathname);
+          }
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (canceled || window.location.pathname.endsWith("cancel")) {
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname.replace("/cancel", "").replace("/success", "")
+      );
+    }
+  }, [searchParams]);
 
   if (loading || !ready) {
     return (
@@ -68,6 +114,12 @@ export default function CampaignDetailPage() {
       transition={{ duration: 0.4 }}
       className="space-y-8"
     >
+      {showSuccessBanner ? (
+        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          Thank you! Your donation was received successfully 🎉
+        </div>
+      ) : null}
+
       {/* Hero Banner */}
       <div className="relative flex h-64 items-end overflow-hidden rounded-2xl bg-[#0A0F1E] lg:h-80">
         <img 
@@ -165,7 +217,7 @@ export default function CampaignDetailPage() {
               Donate Now
             </button>
             <p className="mt-3 text-center text-xs text-slate-500 flex items-center justify-center gap-1">
-              <ShieldCheck className="size-3" /> Secure Payment via Razorpay
+              <ShieldCheck className="size-3" /> Secure Payment via Stripe Checkout
             </p>
           </div>
         </div>

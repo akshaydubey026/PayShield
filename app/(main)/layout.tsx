@@ -32,6 +32,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Heart className="size-5" />
             <span className="text-sm font-medium">My Donations</span>
           </Link>
+          <Link href="/fraud-demo" className={`flex items-center justify-between rounded-lg px-3 py-2 transition-colors ${pathname === '/fraud-demo' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
+            <div className="flex items-center gap-3">
+              <Shield className="size-5" />
+              <span className="text-sm font-medium">Fraud Demo</span>
+            </div>
+            <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 px-2 py-0.5 rounded border border-red-500/30 bg-red-500/10 tracking-widest">
+              <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
+              LIVE
+            </span>
+          </Link>
           <Link href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-slate-400 hover:bg-white/5 hover:text-white transition-colors">
             <Settings className="size-5" />
             <span className="text-sm font-medium">Settings</span>

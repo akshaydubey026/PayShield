@@ -18,7 +18,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={cn("dark", inter.variable)} suppressHydrationWarning>
       <body className="min-h-screen bg-[#0A0F1E] font-sans antialiased">
         <Providers>{children}</Providers>
-        <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
       </body>
     </html>
   );
