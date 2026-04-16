@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -26,7 +25,6 @@ type LoginFormProps = {
 };
 
 export function LoginForm({ showRegisterLink = true }: LoginFormProps) {
-  const router = useRouter();
   const { login } = useAuth();
   const [show, setShow] = useState(false);
   const {

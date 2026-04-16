@@ -20,7 +20,8 @@ export type Donation = {
   amount: number;
   status: string;
   createdAt: string;
-  campaign?: { title: string };
+  stripeSessionId?: string | null;
+  campaign?: { id: string; title: string; imageUrl?: string | null; category?: string };
   donor?: { name: string };
 };
 
@@ -38,23 +39,23 @@ export async function getCampaignById(id: string) {
 }
 
 export async function createDonationOrder(campaignId: string, amount: number) {
-  const { data } = await api.post<{ orderId: string; amount: number; currency: string; keyId: string }>(
+  const { data } = await api.post<{ url: string; sessionId: string; }>(
     "/api/donations/create-order",
     { campaignId, amount }
   );
   return data;
 }
 
-export async function verifyDonation(orderId: string, paymentId: string, signature: string) {
+export async function verifyDonation(sessionId: string) {
   const { data } = await api.post("/api/donations/verify", {
-    orderId,
-    paymentId,
-    signature,
+    sessionId,
   });
   return data;
 }
 
 export async function getMyDonations() {
-  const { data } = await api.get<Donation[]>("/api/donations/my");
-  return data;
+  const { data } = await api.get<{ success: boolean; donations: Donation[] }>(
+    "/api/donations/my-donations"
+  );
+  return data.donations ?? [];
 }

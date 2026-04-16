@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, CheckCircle2, ShieldAlert, Loader2, ArrowLeft } from "lucide-react";
+import { X, CheckCircle2, ShieldAlert, ShieldX, Loader2, ArrowLeft, Clock } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { createDonationOrder, verifyDonation } from "@/lib/campaigns";
+import { RiskScoreGauge } from "../fraud/RiskScoreGauge";
+import { FraudFlagBadge } from "../fraud/FraudFlagBadge";
 
 type DonateModalProps = {
   isOpen: boolean;
@@ -16,13 +18,20 @@ type DonateModalProps = {
 
 const PRESETS = [100, 500, 1000, 2500, 5000, 10000];
 
-type Step = "AMOUNT" | "PROCESSING" | "SUCCESS" | "FAILED" | "BLOCKED";
+type Step = "AMOUNT" | "PROCESSING" | "SUCCESS" | "FAILED" | "BLOCKED" | "RATELIMIT";
 
 export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSuccess }: DonateModalProps) {
   const { user } = useAuth();
   const [step, setStep] = useState<Step>("AMOUNT");
   const [amount, setAmount] = useState<number>(500);
   const [customAmount, setCustomAmount] = useState<string>("");
+  const [countdown, setCountdown] = useState(0);
+  const [errorMessage, setErrorMessage] = useState("The transaction could not be processed.");
+  const [fraudData, setFraudData] = useState<{
+    riskScore: number;
+    flags: string[];
+    signals: any;
+  } | null>(null);
 
   if (!isOpen) return null;
 
@@ -41,62 +50,45 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
 
   const handleProceed = async () => {
     if (amount < 1) return;
+    setErrorMessage("The transaction could not be processed.");
     setStep("PROCESSING");
 
     try {
       const order = await createDonationOrder(campaignId, amount);
+      if (order.url) {
+        window.location.href = order.url;
+      } else {
+        setStep("FAILED");
+      }
 
-      const options = {
-        key: order.keyId,
-        amount: order.amount,
-        currency: order.currency,
-        name: "PayShield",
-        description: `Donation to ${campaignTitle}`,
-        order_id: order.orderId,
-        handler: async (response: any) => {
-          try {
-            const result = await verifyDonation(
-              response.razorpay_order_id,
-              response.razorpay_payment_id,
-              response.razorpay_signature
-            );
-            if (result.status === "SUCCESS") {
-              setStep("SUCCESS");
-              onSuccess?.();
-            } else {
-              setStep("BLOCKED");
-            }
-          } catch (err: any) {
-             if (err?.response?.status === 400) {
-                setStep("FAILED");
-             } else {
-                setStep("BLOCKED"); // Could map to fraud
-             }
-          }
-        },
-        prefill: {
-          name: user?.name,
-          email: user?.email,
-        },
-        theme: {
-          color: "#2563EB",
-        },
-        modal: {
-          ondismiss: () => {
+
+    } catch (e: any) {
+      console.error(e);
+      if (e.response?.status === 403) {
+        setFraudData(e.response.data);
+        setStep("BLOCKED");
+      } else if (e.response?.status === 429) {
+        const retry = e.response.data.retryAfter || 60;
+        setCountdown(retry);
+        setStep("RATELIMIT");
+        
+        let timeLeft = retry;
+        const interval = setInterval(() => {
+          timeLeft -= 1;
+          setCountdown(timeLeft);
+          if (timeLeft <= 0) {
+            clearInterval(interval);
             setStep("AMOUNT");
           }
-        }
-      };
-
-      const rzp = new (window as any).Razorpay(options);
-      rzp.on("payment.failed", function () {
+        }, 1000);
+      } else {
+        setErrorMessage(
+          e?.response?.data?.message ||
+          e?.message ||
+          "Payment failed. Please try again."
+        );
         setStep("FAILED");
-      });
-      rzp.open();
-
-    } catch (e) {
-      console.error(e);
-      setStep("FAILED");
+      }
     }
   };
 
@@ -211,16 +203,54 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
                 key="blocked"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="flex flex-col items-center justify-center py-6 text-center"
+                className="text-center py-8"
               >
-                <ShieldAlert className="mb-4 size-20 text-red-500" />
-                <h2 className="text-2xl font-bold text-white">Transaction Blocked</h2>
-                <p className="mt-2 text-sm text-slate-400">Blocked by PayShield Fraud Detection.</p>
-                <div className="mt-6 flex w-full flex-col gap-3">
-                  <button onClick={onClose} className="w-full rounded-xl border border-white/10 py-3 font-semibold text-white hover:bg-white/5">
-                    Close
-                  </button>
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
+                  className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-red-500/30"
+                >
+                  <ShieldX className="w-10 h-10 text-red-400" />
+                </motion.div>
+
+                <h3 className="text-xl font-bold text-white mb-2">Transaction Blocked</h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  PayShield's fraud detection blocked this transaction to protect you.
+                </p>
+
+                <div className="flex justify-center mb-6">
+                  <RiskScoreGauge score={fraudData?.riskScore || 0} size={100} />
                 </div>
+
+                <div className="flex flex-wrap gap-2 justify-center mb-6">
+                  {fraudData?.flags.map(flag => (
+                    <FraudFlagBadge key={flag} flag={flag} />
+                  ))}
+                </div>
+
+                <p className="text-xs text-gray-500">If you believe this is an error, contact support.</p>
+                
+                <button
+                  onClick={() => { setStep('AMOUNT'); setFraudData(null); }}
+                  className="mt-4 px-6 py-2 border border-white/10 rounded-xl text-gray-400 text-sm hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Close
+                </button>
+              </motion.div>
+            )}
+
+            {step === "RATELIMIT" && (
+              <motion.div key="ratelimit" className="text-center py-8">
+                <div className="w-20 h-20 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-amber-500/30">
+                  <Clock className="w-10 h-10 text-amber-400 animate-pulse" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Slow Down!</h3>
+                <p className="text-gray-400 text-sm mb-4">Too many attempts detected by PayShield.</p>
+                <div className="text-4xl font-bold text-amber-400 mb-2">
+                  {countdown}s
+                </div>
+                <p className="text-xs text-gray-500">You can try again after the countdown</p>
               </motion.div>
             )}
 
@@ -233,7 +263,7 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
               >
                 <X className="mb-4 size-20 text-slate-500" />
                 <h2 className="text-2xl font-bold text-white">Payment Failed</h2>
-                <p className="mt-2 text-sm text-slate-400">The transaction could not be processed.</p>
+                <p className="mt-2 text-sm text-slate-400">{errorMessage}</p>
                 <div className="mt-6 flex w-full flex-col gap-3">
                   <button
                     onClick={() => setStep("AMOUNT")}
