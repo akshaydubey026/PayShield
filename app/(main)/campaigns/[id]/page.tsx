@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
-import { ShieldCheck, Target, Users } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import axios from "axios";
+import { AlertTriangle, CheckCircle2, ShieldCheck, Target, Users, X } from "lucide-react";
 import { getCampaignById, type Campaign, type Donation, verifyDonation } from "@/lib/campaigns";
 import { ProgressBar } from "@/components/campaigns/ProgressBar";
 import { DonateModal } from "@/components/campaigns/DonateModal";
@@ -26,11 +27,12 @@ const getCategoryImage = (category: string): string => {
 export default function CampaignDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const { ready } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [campaign, setCampaign] = useState<(Campaign & { donations: Donation[] }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showCancelledModal, setShowCancelledModal] = useState(false);
 
   const fetchCampaign = () => {
     getCampaignById(params.id as string)
@@ -47,48 +49,89 @@ export default function CampaignDetailPage() {
 
   useEffect(() => {
     const sessionId = searchParams.get("session_id");
-    const canceled = searchParams.get("payment") === "cancel";
+    const payment = searchParams.get("payment");
+    const isCancelled = payment === "cancelled" || payment === "cancel";
 
-    if (sessionId) {
-      let cancelled = false;
+    const campaignPathId = typeof params.id === "string" ? params.id : params.id?.[0] ?? "";
 
-      void (async () => {
+    if (isCancelled) {
+      setShowCancelledModal(true);
+      toast.info("Payment was cancelled.");
+      window.history.replaceState(null, "", `/campaigns/${campaignPathId}`);
+      const t = setTimeout(() => setShowCancelledModal(false), 7000);
+      return () => clearTimeout(t);
+    }
+
+    if (authLoading) return;
+
+    if (!sessionId) return;
+    if (!user) return;
+
+    let cancelled = false;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    void (async () => {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (cancelled) return;
         try {
-          await verifyDonation(sessionId);
+          const result = await verifyDonation(sessionId);
           if (cancelled) return;
-          setShowSuccessBanner(true);
-          toast.success("Thank you! Your donation was received successfully 🎉");
-          fetchCampaign();
-          const t = setTimeout(() => {
+          if (result.success) {
+            setShowSuccessModal(true);
+            if (result.alreadyProcessed) {
+              toast.success("Donation already confirmed.");
+            } else {
+              toast.success("Thank you! Your donation was received successfully 🎉");
+            }
             fetchCampaign();
-          }, 1500);
-          window.history.replaceState(null, "", window.location.pathname);
-          return () => clearTimeout(t);
-        } catch (error) {
-          console.error("Failed to verify Stripe session after redirect", error);
-          if (!cancelled) {
-            toast.error("Payment completed, but confirmation is still pending.");
-            fetchCampaign();
-            window.history.replaceState(null, "", window.location.pathname);
+            setTimeout(() => fetchCampaign(), 1200);
+            window.history.replaceState(null, "", `/campaigns/${campaignPathId}`);
+            return;
           }
+        } catch (error) {
+          if (cancelled) return;
+          const ax = axios.isAxiosError(error);
+          const status = ax ? error.response?.status : undefined;
+          const msg =
+            ax && error.response?.data && typeof error.response.data === "object"
+              ? String((error.response.data as { message?: string }).message ?? "")
+              : "";
+
+          const paymentPending =
+            status === 400 &&
+            (msg.toLowerCase().includes("not completed") ||
+              msg.toLowerCase().includes("not successful") ||
+              msg.toLowerCase().includes("payment not"));
+
+          if (paymentPending && attempt < 5) {
+            await sleep(700 + attempt * 350);
+            continue;
+          }
+
+          console.error("Failed to verify Stripe session after redirect", error);
+
+          if (status === 401) {
+            toast.error(
+              "Could not confirm payment (session not ready). Refresh this page or sign in again."
+            );
+          } else {
+            toast.error(
+              "We could not confirm the donation in the app yet. If Stripe charged you, wait a minute and refresh — the webhook will still update your gift."
+            );
+          }
+          fetchCampaign();
+          window.history.replaceState(null, "", `/campaigns/${campaignPathId}`);
+          return;
         }
-      })();
+      }
+    })();
 
-      return () => {
-        cancelled = true;
-      };
-    }
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, authLoading, user, params.id]);
 
-    if (canceled || window.location.pathname.endsWith("cancel")) {
-      window.history.replaceState(
-        null,
-        "",
-        window.location.pathname.replace("/cancel", "").replace("/success", "")
-      );
-    }
-  }, [searchParams]);
-
-  if (loading || !ready) {
+  if (loading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <div className="size-8 animate-spin rounded-full border-4 border-white/10 border-t-blue-500" />
@@ -114,11 +157,62 @@ export default function CampaignDetailPage() {
       transition={{ duration: 0.4 }}
       className="space-y-8"
     >
-      {showSuccessBanner ? (
-        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-          Thank you! Your donation was received successfully 🎉
-        </div>
-      ) : null}
+      <AnimatePresence>
+        {showSuccessModal ? (
+          <motion.div
+            key="pay-success"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            className="fixed right-6 top-6 z-50 max-w-sm rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 backdrop-blur-md"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
+                <CheckCircle2 className="size-4 text-emerald-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white">Donation successful</p>
+                <p className="mt-1 text-xs text-emerald-400">
+                  Your payment was verified and protected by PayShield.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                className="shrink-0 text-slate-500 hover:text-white"
+                aria-label="Dismiss"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showCancelledModal ? (
+          <motion.div
+            key="pay-cancel"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            className="fixed right-6 top-6 z-50 max-w-sm rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 backdrop-blur-md"
+          >
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="size-4 shrink-0 text-amber-400" />
+              <p className="text-sm text-white">Payment was cancelled.</p>
+              <button
+                type="button"
+                onClick={() => setShowCancelledModal(false)}
+                className="ml-auto shrink-0 text-slate-500 hover:text-white"
+                aria-label="Dismiss"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {/* Hero Banner */}
       <div className="relative flex h-64 items-end overflow-hidden rounded-2xl bg-[#0A0F1E] lg:h-80">

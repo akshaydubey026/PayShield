@@ -10,6 +10,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
 const schema = z
@@ -46,6 +47,7 @@ function strengthLabel(password: string) {
 }
 
 export function RegisterForm({ showLoginLink = true }: RegisterFormProps) {
+  const router = useRouter();
   const { register: registerUser } = useAuth();
   const [show1, setShow1] = useState(false);
   const [show2, setShow2] = useState(false);
@@ -78,7 +80,7 @@ export function RegisterForm({ showLoginLink = true }: RegisterFormProps) {
         role: values.role,
       });
       toast.success("Account created");
-      window.location.href = "/dashboard";
+      router.push("/overview");
     } catch (e: unknown) {
       const msg =
         typeof e === "object" && e !== null && "response" in e

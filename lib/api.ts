@@ -1,12 +1,31 @@
 "use client";
 
-import axios from "axios";
+import axios, { type AxiosRequestConfig } from "axios";
 import { API_URL } from "./env";
 import { getAccessToken, setAccessToken } from "./access-token";
+
+type Queued = {
+  resolve: (token: string) => void;
+  reject: (err: unknown) => void;
+};
+
+let isRefreshing = false;
+let failedQueue: Queued[] = [];
+
+const processQueue = (error: unknown, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) prom.reject(error);
+    else if (token) prom.resolve(token);
+  });
+  failedQueue = [];
+};
 
 export const api = axios.create({
   baseURL: API_URL,
   withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
 api.interceptors.request.use((config) => {
@@ -17,60 +36,65 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-let isRefreshing = false;
-const waiters: Array<(token: string | null) => void> = [];
-
-async function refreshAccessToken(): Promise<string | null> {
-  try {
-    const { data } = await axios.post<{ accessToken: string }>(
-      `${API_URL}/api/auth/refresh`,
-      {},
-      { withCredentials: true }
-    );
-    setAccessToken(data.accessToken);
-    return data.accessToken;
-  } catch {
-    setAccessToken(null);
-    return null;
-  }
-}
-
 api.interceptors.response.use(
-  (res) => res,
+  (response) => response,
   async (error) => {
-    const original = error.config as typeof error.config & { _retry?: boolean };
+    const originalRequest = error.config as AxiosRequestConfig & {
+      _retry?: boolean;
+    };
+
+    if (!originalRequest) {
+      return Promise.reject(error);
+    }
+
+    const url = String(originalRequest.url ?? "");
+
     if (
-      error.response?.status === 401 &&
-      !original?._retry &&
-      original?.url &&
-      !String(original.url).includes("/api/auth/refresh") &&
-      !String(original.url).includes("/api/auth/login") &&
-      !String(original.url).includes("/api/auth/register")
+      url.includes("/api/auth/refresh") ||
+      url.includes("/api/auth/login") ||
+      url.includes("/api/auth/register") ||
+      originalRequest._retry
     ) {
-      original._retry = true;
+      return Promise.reject(error);
+    }
+
+    if (error.response?.status === 401) {
       if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          waiters.push((token) => {
-            if (!token) {
-              reject(error);
-              return;
-            }
-            original.headers.Authorization = `Bearer ${token}`;
-            resolve(api(original));
-          });
+        return new Promise<string>((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then((token) => {
+          originalRequest.headers = originalRequest.headers ?? {};
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
         });
       }
+
+      originalRequest._retry = true;
       isRefreshing = true;
-      const token = await refreshAccessToken();
-      waiters.forEach((w) => w(token));
-      waiters.length = 0;
-      isRefreshing = false;
-      if (!token) {
-        return Promise.reject(error);
+
+      try {
+        const res = await api.post<{ accessToken: string }>("/api/auth/refresh", {});
+        const newToken = res.data.accessToken;
+        setAccessToken(newToken);
+        originalRequest.headers = originalRequest.headers ?? {};
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        processQueue(null, newToken);
+        return api(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        setAccessToken(null);
+        if (
+          typeof window !== "undefined" &&
+          !window.location.pathname.includes("/login")
+        ) {
+          window.location.href = "/login";
+        }
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
-      original.headers.Authorization = `Bearer ${token}`;
-      return api(original);
     }
+
     return Promise.reject(error);
   }
 );
