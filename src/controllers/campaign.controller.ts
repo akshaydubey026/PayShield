@@ -13,15 +13,30 @@ const createCampaignSchema = z.object({
 
 export async function getAll(req: Request, res: Response) {
   try {
-    const campaigns = await prisma.campaign.findMany({
-      where: { isActive: true },
-      include: {
-        creator: { select: { name: true } },
-        _count: { select: { donations: { where: { status: "SUCCESS" } } } }
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    return res.json(campaigns);
+    const [campaigns, blockedByCampaign] = await Promise.all([
+      prisma.campaign.findMany({
+        where: { isActive: true },
+        include: {
+          creator: { select: { name: true } },
+          _count: { select: { donations: { where: { status: "SUCCESS" } } } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.donation.groupBy({
+        by: ["campaignId"],
+        where: { status: "BLOCKED" },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const blockedCampaignIds = new Set(blockedByCampaign.map((b) => b.campaignId));
+
+    return res.json(
+      campaigns.map((c) => ({
+        ...c,
+        hasBlockedDonations: blockedCampaignIds.has(c.id),
+      }))
+    );
   } catch (e) {
     console.error(e);
     return res.status(500).json({ message: "Failed to fetch campaigns" });

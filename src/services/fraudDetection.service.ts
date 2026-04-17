@@ -1,4 +1,4 @@
-import redis, { isRedisReady } from '../config/redis.config.js';
+import redis from '../config/redis.config.js';
 import { prisma } from '../lib/prisma.js';
 
 export interface FraudAnalysisResult {
@@ -23,10 +23,6 @@ export async function analyzeFraud(payload: {
   campaignId: string;
   userAgent: string;
 }): Promise<FraudAnalysisResult> {
-  if (!isRedisReady()) {
-    throw new Error('Redis unavailable for fraud analysis');
-  }
-
   const flags: string[] = [];
   const reasons: string[] = [];
   const signals = {
@@ -108,26 +104,26 @@ export async function analyzeFraud(payload: {
     }
   }
 
-  // Large absolute amount threshold
-  if (payload.amount >= 50000) {
-    signals.amountScore = Math.min(25, signals.amountScore + 10);
+  if (payload.amount > 50000) {
+    signals.amountScore = Math.min(15, signals.amountScore + 15);
     flags.push('LARGE_ABSOLUTE_AMOUNT');
+    // Only 15 points — not enough to block alone
+    // Needs OTHER signals too to reach 61+ (BLOCK)
     reasons.push('Donation amount exceeds ₹50,000 — high-value transaction flagged for review.');
   }
 
   // ─────────────────────────────────────────────
-  // SIGNAL 3 — Duplicate Campaign (max 20 points)
+  // SIGNAL 3 — Rapid repeat to same campaign (double-submit / card testing)
+  // Short window only — legitimate donors often give to the same campaign multiple times.
   // ─────────────────────────────────────────────
   const dupKey = `campaign_donate:${payload.userId}:${payload.campaignId}`;
   const isDuplicate = await redis.exists(dupKey);
 
   if (isDuplicate) {
-    signals.duplicateScore = 20;
-    flags.push('DUPLICATE_CAMPAIGN_DONATION');
-    reasons.push('You have already donated to this campaign in the last 24 hours.');
+    signals.duplicateScore = 10;
+    flags.push('REPEAT_DONATION_SAME_CAMPAIGN');
+    reasons.push('Another donation to this campaign started very recently (possible duplicate click).');
   }
-  // Set with 24h TTL — will be re-checked on next attempt
-  await redis.set(dupKey, '1', 'EX', 86400);
 
   // ─────────────────────────────────────────────
   // SIGNAL 4 — Behavioral (max 15 points)
