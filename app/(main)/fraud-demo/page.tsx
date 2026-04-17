@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, Target, Server, Activity, Users, AlertTriangle, ShieldCheck, ShieldX } from "lucide-react";
+import { Shield, Target, Server, Activity } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
+import { FraudMetricCards } from "@/components/dashboard/FraudMetricCards";
+import { EventTimeline } from "@/components/kafka/EventTimeline";
 
 type FraudStats = {
   totalBlocked: number;
@@ -12,6 +16,11 @@ type FraudStats = {
   avgRiskScore: number;
   blockedAmount: number;
   topFlags: { flag: string; count: number }[];
+  kafkaStats?: {
+    blockedToday: number;
+    reviewedToday: number;
+    blockedAmountToday: number;
+  };
 };
 
 type DonationFeed = {
@@ -26,39 +35,89 @@ type DonationFeed = {
   donor: { name: string };
 };
 
+type ActiveAnalysis = {
+  score: number;
+  decision: "BLOCK";
+  signals: {
+    velocityScore: number;
+    amountScore: number;
+    duplicateScore: number;
+    behaviorScore: number;
+    reputationScore: number;
+  };
+};
+
+type ApiError = {
+  response?: {
+    status?: number;
+    data?: {
+      riskScore?: number;
+      flags?: string[];
+      signals?: ActiveAnalysis["signals"];
+    };
+  };
+};
+
+type KafkaStatsResponse = {
+  consumerStatus: {
+    notificationService: string;
+    auditLogger: string;
+    fraudAnalytics: string;
+  };
+};
+
 export default function FraudDemoPage() {
-  const [stats, setStats] = useState<FraudStats | null>(null);
-  const [feed, setFeed] = useState<DonationFeed[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
-  const [activeAnalysis, setActiveAnalysis] = useState<any>(null);
+  const [activeAnalysis, setActiveAnalysis] = useState<ActiveAnalysis | null>(null);
   const [campaignId, setCampaignId] = useState<string>("");
   const [simulating, setSimulating] = useState(false);
 
+  const { data: campaigns } = useQuery({
+    queryKey: queryKeys.campaigns,
+    queryFn: () => api.get<{ id: string }[]>("/api/campaigns").then((r) => r.data),
+  });
+
   useEffect(() => {
-    // Fetch initial a campaignId to use for tests
-    api.get("/api/campaigns").then((res) => {
-      if (res.data.length > 0) setCampaignId(res.data[0].id);
-    });
+    if (campaigns?.length && !campaignId) {
+      setCampaignId(campaigns[0].id);
+    }
+  }, [campaigns, campaignId]);
 
-    const fetchFeed = () => {
-      api.get("/api/fraud/feed").then((res) => setFeed(res.data)).catch(console.error);
-    };
+  const { data: stats } = useQuery({
+    queryKey: queryKeys.fraudStats,
+    queryFn: () => api.get<FraudStats>("/api/fraud/stats").then((r) => r.data),
+    refetchInterval: 10_000,
+  });
 
-    const fetchStats = () => {
-      api.get("/api/fraud/stats").then((res) => setStats(res.data)).catch(console.error);
-    };
+  const { data: feed = [] } = useQuery({
+    queryKey: queryKeys.fraudFeed,
+    queryFn: () => api.get<DonationFeed[]>("/api/fraud/feed").then((r) => r.data),
+    refetchInterval: 5_000,
+  });
 
-    fetchFeed();
-    fetchStats();
+  const { data: kafkaStats } = useQuery({
+    queryKey: queryKeys.kafkaStats,
+    queryFn: () => api.get<KafkaStatsResponse>("/api/kafka/stats").then((r) => r.data),
+    refetchInterval: 10_000,
+  });
 
-    const feedInterval = setInterval(fetchFeed, 5000);
-    const statsInterval = setInterval(fetchStats, 10000);
+  const { data: auditCountToday = 0 } = useQuery({
+    queryKey: queryKeys.kafkaAuditLogs(100),
+    queryFn: async () => {
+      const res = await api.get<{ data?: { createdAt?: string }[] }>("/api/kafka/audit-logs?limit=100");
+      const items = res.data?.data || [];
+      const today = new Date().toISOString().split("T")[0];
+      return items.filter((item) => String(item.createdAt || "").startsWith(today)).length;
+    },
+    refetchInterval: 10_000,
+  });
 
-    return () => {
-      clearInterval(feedInterval);
-      clearInterval(statsInterval);
-    };
-  }, []);
+  const kafkaConsumersLabel = useMemo(() => {
+    const status = kafkaStats?.consumerStatus;
+    if (!status) return "3 Active";
+    const n = Object.values(status).filter((s) => s === "running").length;
+    return `${n} Active`;
+  }, [kafkaStats?.consumerStatus]);
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString();
@@ -75,13 +134,17 @@ export default function FraudDemoPage() {
       try {
         await api.post("/api/donations/create-order", { campaignId, amount: 100 });
         addLog(`Request ${i} → ALLOW (score: 0)`);
-      } catch (e: any) {
-        if (e.response?.status === 403) {
-          const { riskScore, flags, signals } = e.response.data;
+      } catch (e: unknown) {
+        const error = e as ApiError;
+        if (error.response?.status === 403) {
+          const riskScore = error.response.data?.riskScore ?? 0;
+          const flags = error.response.data?.flags ?? [];
+          const signals = error.response.data?.signals;
+          if (!signals) continue;
           addLog(`Request ${i} → BLOCK (score: ${riskScore}) ${flags.join(", ")}`);
           setActiveAnalysis({ score: riskScore, decision: 'BLOCK', signals });
           break;
-        } else if (e.response?.status === 429) {
+        } else if (error.response?.status === 429) {
           addLog(`Request ${i} → RATELIMIT (please wait)`);
           break;
         }
@@ -99,9 +162,16 @@ export default function FraudDemoPage() {
     try {
       await api.post("/api/donations/create-order", { campaignId, amount: 9999999 });
       addLog(`Request → ALLOW`);
-    } catch (e: any) {
-      if (e.response?.status === 403) {
-        const { riskScore, flags, signals } = e.response.data;
+    } catch (e: unknown) {
+      const error = e as ApiError;
+      if (error.response?.status === 403) {
+        const riskScore = error.response.data?.riskScore ?? 0;
+        const flags = error.response.data?.flags ?? [];
+        const signals = error.response.data?.signals;
+        if (!signals) {
+          setSimulating(false);
+          return;
+        }
         addLog(`Request → BLOCK (score: ${riskScore}) ${flags[0]}`);
         setActiveAnalysis({ score: riskScore, decision: 'BLOCK', signals });
       }
@@ -120,9 +190,16 @@ export default function FraudDemoPage() {
         { headers: { 'User-Agent': 'curl/7.68.0' } }
       );
       addLog(`Request → ALLOW`);
-    } catch (e: any) {
-      if (e.response?.status === 403) {
-        const { riskScore, flags, signals } = e.response.data;
+    } catch (e: unknown) {
+      const error = e as ApiError;
+      if (error.response?.status === 403) {
+        const riskScore = error.response.data?.riskScore ?? 0;
+        const flags = error.response.data?.flags ?? [];
+        const signals = error.response.data?.signals;
+        if (!signals) {
+          setSimulating(false);
+          return;
+        }
         addLog(`Request → BLOCK (score: ${riskScore}) ${flags[0]}`);
         setActiveAnalysis({ score: riskScore, decision: 'BLOCK', signals });
       }
@@ -148,20 +225,36 @@ export default function FraudDemoPage() {
         </div>
       </div>
 
-      {/* SECTION 2: STATS */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        {[
-          { label: "Total Blocked Today", value: stats?.totalBlocked || 0, color: "text-red-500" },
-          { label: "Pending Review", value: stats?.totalReviewed || 0, color: "text-amber-500" },
-          { label: "Avg Risk Score", value: (stats?.avgRiskScore || 0).toFixed(1), color: "text-blue-500" },
-          { label: "Amount Saved (INR)", value: `₹${(stats?.blockedAmount || 0).toLocaleString()}`, color: "text-emerald-500" },
-        ].map((s, i) => (
-          <div key={i} className="rounded-2xl border border-white/10 bg-[#0A0F1E] p-6 shadow-xl">
-            <p className="text-sm font-medium text-slate-400">{s.label}</p>
-            <p className={`mt-2 text-3xl font-bold ${s.color}`}>{s.value}</p>
-          </div>
-        ))}
-      </div>
+      {/* SECTION 0: KAFKA LIVE STREAM */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-bold text-white">Live Event Stream</h2>
+          <p className="text-sm text-slate-400">
+            Real-time Kafka events flowing through PayShield
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+          {[
+            { label: "donation.created", color: "bg-blue-500" },
+            { label: "donation.processed", color: "bg-emerald-500" },
+            { label: "fraud.flagged", color: "bg-amber-500" },
+            { label: "fraud.blocked", color: "bg-red-500" },
+          ].map((topic) => (
+            <div key={topic.label} className="flex items-center gap-2">
+              <span className={`size-2 rounded-full ${topic.color}`} />
+              <span>{topic.label}</span>
+            </div>
+          ))}
+        </div>
+        <EventTimeline />
+      </section>
+
+      {/* SECTION 2: STATS (shared query keys with /overview) */}
+      <FraudMetricCards
+        stats={stats}
+        auditCountToday={auditCountToday}
+        kafkaConsumersLabel={kafkaConsumersLabel}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
@@ -290,7 +383,7 @@ export default function FraudDemoPage() {
             </div>
 
             <div className="bg-black/50 p-4 rounded-xl border border-white/5 h-48 overflow-y-auto font-mono text-xs">
-              <div className="text-slate-500 mb-2">// Network Output Logs</div>
+              <div className="text-slate-500 mb-2">Network Output Logs</div>
               {logs.map((L, idx) => (
                 <div key={idx} className={L.includes("BLOCK") ? "text-red-400" : L.includes("RATELIMIT") ? "text-amber-400" : "text-emerald-400"}>
                   {L}

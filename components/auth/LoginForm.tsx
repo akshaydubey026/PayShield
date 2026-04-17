@@ -10,6 +10,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
 const schema = z.object({
@@ -25,6 +26,7 @@ type LoginFormProps = {
 };
 
 export function LoginForm({ showRegisterLink = true }: LoginFormProps) {
+  const router = useRouter();
   const { login } = useAuth();
   const [show, setShow] = useState(false);
   const {
@@ -37,7 +39,7 @@ export function LoginForm({ showRegisterLink = true }: LoginFormProps) {
     try {
       await login(values.email, values.password);
       toast.success("Welcome back");
-      window.location.href = "/dashboard";
+      router.push("/overview");
     } catch (e: unknown) {
       const msg =
         typeof e === "object" && e !== null && "response" in e

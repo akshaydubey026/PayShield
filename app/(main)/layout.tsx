@@ -16,7 +16,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span className="text-lg font-bold tracking-tight">PayShield</span>
         </div>
         <nav className="flex-1 space-y-1 p-4">
-          <Link href="/dashboard" className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${pathname === '/dashboard' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
+          <Link href="/overview" className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${pathname === '/overview' || pathname === '/dashboard' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
             <Home className="size-5" />
             <span className="text-sm font-medium">Overview</span>
           </Link>
@@ -42,6 +42,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               LIVE
             </span>
           </Link>
+          <div className="mx-3 rounded-xl border border-white/5 bg-white/[0.03] p-3">
+            <p className="mb-2 text-xs font-medium text-gray-500">System Status</p>
+            <div className="space-y-1.5">
+              {[
+                { label: "API Server", status: "online" },
+                { label: "Redis", status: "online" },
+                { label: "Kafka", status: "online" },
+                { label: "PostgreSQL", status: "online" },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">{item.label}</span>
+                  <div className="flex items-center gap-1">
+                    <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                    <span className="text-xs text-emerald-400">{item.status}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
           <Link href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-slate-400 hover:bg-white/5 hover:text-white transition-colors">
             <Settings className="size-5" />
             <span className="text-sm font-medium">Settings</span>

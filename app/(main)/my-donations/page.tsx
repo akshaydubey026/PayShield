@@ -10,12 +10,32 @@ export default function MyDonationsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getMyDonations()
-      .then((data) => {
-        setDonations(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    let cancelled = false;
+
+    const load = () => {
+      setLoading(true);
+      getMyDonations()
+        .then((data) => {
+          if (!cancelled) {
+            setDonations(data);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setLoading(false);
+        });
+    };
+
+    load();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   const getStatusStyle = (status: string) => {

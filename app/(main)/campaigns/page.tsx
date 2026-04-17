@@ -56,7 +56,7 @@ export default function CampaignsPage() {
           Discover Campaigns
         </h1>
         <p className="text-gray-400 text-base max-w-2xl">
-          Every donation is protected by PayShield's real-time fraud detection algorithms, ensuring your impact reaches the intended hands.
+          Every donation is protected by PayShield&apos;s real-time fraud detection algorithms, ensuring your impact reaches the intended hands.
         </p>
       </div>
 
@@ -140,7 +140,7 @@ export default function CampaignsPage() {
       {(!loading && (searchQuery || activeCategory !== 'All')) ? (
         <p className="text-sm font-medium text-gray-500 mb-6 px-1">
           Showing {filteredCampaigns.length} result{filteredCampaigns.length !== 1 ? 's' : ''}
-          {searchQuery && <span className="text-gray-300"> for "{searchQuery}"</span>}
+          {searchQuery && <span className="text-gray-300"> for &quot;{searchQuery}&quot;</span>}
           {activeCategory !== 'All' && <span className="text-gray-300"> in {activeCategory}</span>}
         </p>
       ) : null}

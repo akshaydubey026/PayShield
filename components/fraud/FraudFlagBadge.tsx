@@ -8,6 +8,7 @@ const flagLabels: Record<string, string> = {
   AMOUNT_SPIKE_HIGH: 'High Amount Spike',
   AMOUNT_SPIKE_MODERATE: 'Moderate Amount Spike',
   DUPLICATE_CAMPAIGN_DONATION: 'Duplicate Campaign',
+  REPEAT_DONATION_SAME_CAMPAIGN: 'Repeat Gift (short window)',
   BOT_LIKE_USER_AGENT: 'Bot-like Behavior',
   ROUND_AMOUNT_HIGH_VELOCITY: 'Suspicious Round Amount',
   BLACKLISTED_IP: 'Blacklisted IP Address',

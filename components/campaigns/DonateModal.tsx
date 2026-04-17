@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, CheckCircle2, ShieldAlert, ShieldX, Loader2, ArrowLeft, Clock } from "lucide-react";
+import { X, CheckCircle2, ShieldX, Loader2, ArrowLeft, Clock } from "lucide-react";
+import { createDonationOrder } from "@/lib/campaigns";
 import { useAuth } from "@/lib/auth";
-import { createDonationOrder, verifyDonation } from "@/lib/campaigns";
 import { RiskScoreGauge } from "../fraud/RiskScoreGauge";
 import { FraudFlagBadge } from "../fraud/FraudFlagBadge";
 
@@ -17,11 +17,27 @@ type DonateModalProps = {
 };
 
 const PRESETS = [100, 500, 1000, 2500, 5000, 10000];
+/** Matches backend / Stripe: charges below ~$0.50 USD equivalent are rejected. */
+const MIN_DONATION_INR = 50;
 
 type Step = "AMOUNT" | "PROCESSING" | "SUCCESS" | "FAILED" | "BLOCKED" | "RATELIMIT";
 
+type DonationApiError = {
+  response?: {
+    status?: number;
+    data?: {
+      retryAfter?: number;
+      message?: string;
+      riskScore?: number;
+      flags?: string[];
+      signals?: Record<string, number>;
+    };
+  };
+  message?: string;
+};
+
 export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSuccess }: DonateModalProps) {
-  const { user } = useAuth();
+  const { refreshSession } = useAuth();
   const [step, setStep] = useState<Step>("AMOUNT");
   const [amount, setAmount] = useState<number>(500);
   const [customAmount, setCustomAmount] = useState<string>("");
@@ -30,7 +46,7 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
   const [fraudData, setFraudData] = useState<{
     riskScore: number;
     flags: string[];
-    signals: any;
+    signals: Record<string, number>;
   } | null>(null);
 
   if (!isOpen) return null;
@@ -49,11 +65,12 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
   };
 
   const handleProceed = async () => {
-    if (amount < 1) return;
+    if (amount < MIN_DONATION_INR) return;
     setErrorMessage("The transaction could not be processed.");
     setStep("PROCESSING");
 
     try {
+      await refreshSession();
       const order = await createDonationOrder(campaignId, amount);
       if (order.url) {
         window.location.href = order.url;
@@ -62,13 +79,18 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
       }
 
 
-    } catch (e: any) {
-      console.error(e);
-      if (e.response?.status === 403) {
-        setFraudData(e.response.data);
+    } catch (e: unknown) {
+      const error = e as DonationApiError;
+      console.error(error);
+      if (error.response?.status === 403) {
+        setFraudData({
+          riskScore: error.response.data?.riskScore || 0,
+          flags: error.response.data?.flags || [],
+          signals: error.response.data?.signals || {},
+        });
         setStep("BLOCKED");
-      } else if (e.response?.status === 429) {
-        const retry = e.response.data.retryAfter || 60;
+      } else if (error.response?.status === 429) {
+        const retry = error.response.data?.retryAfter || 60;
         setCountdown(retry);
         setStep("RATELIMIT");
         
@@ -83,8 +105,8 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
         }, 1000);
       } else {
         setErrorMessage(
-          e?.response?.data?.message ||
-          e?.message ||
+          error.response?.data?.message ||
+          error.message ||
           "Payment failed. Please try again."
         );
         setStep("FAILED");
@@ -140,6 +162,7 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
 
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-slate-400">CUSTOM AMOUNT (₹)</label>
+                  <p className="text-xs text-slate-500">Minimum ₹{MIN_DONATION_INR} (card processor limit)</p>
                   <input
                     type="number"
                     value={customAmount}
@@ -151,7 +174,7 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
 
                 <button
                   onClick={handleProceed}
-                  disabled={amount < 1}
+                  disabled={amount < MIN_DONATION_INR}
                   className="w-full rounded-xl bg-blue-600 py-4 font-bold text-white transition-all hover:bg-blue-500 active:scale-95 disabled:opacity-50"
                 >
                   Proceed to Pay ₹{amount}
@@ -190,7 +213,10 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
                 <p className="mt-2 text-slate-400">Your donation of <strong className="text-white">₹{amount}</strong> was incredibly generous.</p>
                 
                 <button
-                  onClick={onClose}
+                  onClick={() => {
+                    onSuccess?.();
+                    onClose();
+                  }}
                   className="mt-8 w-full rounded-xl bg-white/10 py-3 font-semibold text-white hover:bg-white/20"
                 >
                   Return to Campaign
@@ -216,7 +242,7 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
 
                 <h3 className="text-xl font-bold text-white mb-2">Transaction Blocked</h3>
                 <p className="text-gray-400 text-sm mb-6">
-                  PayShield's fraud detection blocked this transaction to protect you.
+                  PayShield&apos;s fraud detection blocked this transaction to protect you.
                 </p>
 
                 <div className="flex justify-center mb-6">
