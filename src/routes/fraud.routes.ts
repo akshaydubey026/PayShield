@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import redis from "../config/redis.config.js";
+import redis, { isRedisReady } from "../config/redis.config.js";
 
 const originRouter = Router();
 
@@ -40,12 +40,29 @@ originRouter.get("/stats", requireAuth, async (req, res) => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
+    const todayKey = new Date().toISOString().split("T")[0];
+    let redisBlocked: string | null = "0";
+    let redisReviewed: string | null = "0";
+    let redisBlockedAmount: string | null = "0";
+    if (isRedisReady()) {
+      [redisBlocked, redisReviewed, redisBlockedAmount] = await Promise.all([
+        redis.get(`stats:blocked:${todayKey}`),
+        redis.get(`stats:reviewed:${todayKey}`),
+        redis.get(`stats:blocked_amount:${todayKey}`),
+      ]);
+    }
+
     return res.json({
       totalBlocked,
       totalReviewed,
       avgRiskScore: stats._avg.riskScore || 0,
       blockedAmount,
       topFlags,
+      kafkaStats: {
+        blockedToday: parseInt(redisBlocked || "0", 10),
+        reviewedToday: parseInt(redisReviewed || "0", 10),
+        blockedAmountToday: parseFloat(redisBlockedAmount || "0"),
+      },
     });
   } catch (err) {
     console.error(err);
@@ -85,6 +102,9 @@ originRouter.post("/block-ip", requireAuth, async (req, res) => {
   try {
     const { ipAddress } = req.body;
     if (!ipAddress) return res.status(400).json({ message: "IP required" });
+    if (!isRedisReady()) {
+      return res.status(503).json({ message: "Redis unavailable; cannot update block list" });
+    }
 
     await redis.sadd("blocked_ips", ipAddress);
     return res.json({ success: true });

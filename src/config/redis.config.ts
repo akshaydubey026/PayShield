@@ -23,6 +23,10 @@ redis.on('error', (err) => {
   }
 });
 
+void redis.connect().catch(() => {
+  /* connection errors are logged via the "error" event */
+});
+
 export function isRedisReady() {
   return redis.status === 'ready';
 }

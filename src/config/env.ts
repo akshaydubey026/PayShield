@@ -15,6 +15,12 @@ const envSchema = z.object({
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
   REDIS_HOST: z.string().default("localhost"),
   REDIS_PORT: z.coerce.number().default(6379),
+  KAFKA_BROKER: z.string().default("localhost:9092"),
+  SMTP_HOST: z.string().default("smtp.ethereal.email"),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  ADMIN_EMAIL: z.string().default("admin@payshield.com"),
 });
 
 const parsed = envSchema.safeParse(process.env);

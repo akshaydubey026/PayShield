@@ -2,8 +2,6 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 
-const ACCESS_EXPIRES = "15m";
-const REFRESH_EXPIRES = "7d";
 const REFRESH_EXPIRES_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type AccessPayload = { sub: string; email: string; role: string };
@@ -14,11 +12,11 @@ export function hashRefreshToken(token: string): string {
 }
 
 export function signAccessToken(payload: AccessPayload): string {
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: ACCESS_EXPIRES });
+  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: "15m" });
 }
 
 export function signRefreshToken(payload: RefreshPayload): string {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES });
+  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
 }
 
 export function verifyAccessToken(token: string): AccessPayload {

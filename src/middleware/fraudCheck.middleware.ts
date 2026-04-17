@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { checkRateLimit } from '../services/rateLimiter.service.js';
 import { analyzeFraud } from '../services/fraudDetection.service.js';
 import { prisma } from '../lib/prisma.js';
+import { publishFraudBlocked } from '../services/kafka.service.js';
 
 export async function fraudCheckMiddleware(
   req: Request,
@@ -26,7 +27,7 @@ export async function fraudCheckMiddleware(
     const rateCheck = await checkRateLimit({
       identifier: `user:${userId}`,
       windowMs: 60 * 1000,
-      limit: 5,
+      limit: 15,
     });
 
     if (!rateCheck.allowed) {
@@ -64,6 +65,20 @@ export async function fraudCheckMiddleware(
           fraudReasons: fraudResult.fraudReasons,
         },
       });
+
+      try {
+        await publishFraudBlocked({
+          userId,
+          amount: parseFloat(amount),
+          campaignId,
+          riskScore: fraudResult.riskScore,
+          flags: fraudResult.fraudFlags,
+          ipAddress,
+          blockedAt: new Date().toISOString(),
+        });
+      } catch (kafkaErr) {
+        console.error("[FraudCheck] Kafka publish skipped:", kafkaErr);
+      }
 
       return res.status(403).json({
         error: 'TRANSACTION_BLOCKED',

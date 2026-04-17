@@ -137,9 +137,13 @@ export async function rotateRefreshToken(rawRefresh: string, res: Response) {
   }
 
   if (session.token !== incomingHash) {
-    await prisma.session.deleteMany({ where: { userId: session.userId } });
+    // Invalidate this session only. Deleting every session was too aggressive: two tabs
+    // refreshing at once could rotate the cookie twice and falsely trigger "reuse".
+    await prisma.session.deleteMany({ where: { id: session.id } });
     clearRefreshCookie(res);
-    const err = new Error("Refresh token reuse detected") as Error & { status?: number };
+    const err = new Error("Session expired or was replaced. Please sign in again.") as Error & {
+      status?: number;
+    };
     err.status = 401;
     throw err;
   }

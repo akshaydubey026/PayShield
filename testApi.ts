@@ -12,7 +12,11 @@ async function testEndpoint() {
       return;
     }
 
-    const token = jwt.sign({ sub: user.id, email: user.email, role: user.role }, "payshield_dev_access_secret_min_32_chars!!");
+    const token = jwt.sign(
+      { sub: user.id, email: user.email, role: user.role },
+      "payshield_dev_access_secret_min_32_chars!!",
+      { expiresIn: "15m" }
+    );
 
     const res = await fetch('http://localhost:5000/api/donations/create-order', {
       method: 'POST',

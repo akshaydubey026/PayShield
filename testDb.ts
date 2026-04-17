@@ -25,11 +25,20 @@ async function testCreateOrder() {
         status: "PENDING",
         riskScore: 0,
         fraudFlags: [],
+        fraudReasons: [],
       },
     });
     console.log("Donation created:", donation.id);
 
-    const session = await stripeService.createCheckoutSession(amount, "inr", donation.id, campaign.title);
+    const session = await stripeService.createCheckoutSession(
+      amount,
+      "inr",
+      donation.id,
+      campaign.title,
+      campaign.id,
+      user.email,
+      user.id
+    );
     console.log("Stripe session returned URL:", session.url);
 
     await prisma.donation.update({

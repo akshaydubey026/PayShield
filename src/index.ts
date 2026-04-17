@@ -6,8 +6,13 @@ import authRoutes from "./routes/auth.routes.js";
 import campaignRoutes from "./routes/campaign.routes.js";
 import donationRoutes from "./routes/donation.routes.js";
 import fraudRoutes from "./routes/fraud.routes.js";
+import kafkaRouter from "./routes/kafka.routes.js";
 import { requireAuth } from "./middleware/auth.middleware.js";
 import { stripeWebhook } from "./controllers/donation.controller.js";
+import { connectProducer } from "./services/kafka.service.js";
+import { startNotificationConsumer } from "./consumers/notification.consumer.js";
+import { startAuditLoggerConsumer } from "./consumers/auditLogger.consumer.js";
+import { startFraudAnalyticsConsumer } from "./consumers/fraudAnalytics.consumer.js";
 
 const app = express();
 
@@ -53,6 +58,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/campaigns", campaignRoutes);
 app.use("/api/donations", donationRoutes);
 app.use("/api/fraud", requireAuth, fraudRoutes);
+app.use("/api/kafka", requireAuth, kafkaRouter);
 
 // ─────────────────────────────────────────────
 // Global Error Handler
@@ -72,6 +78,20 @@ app.use(
 // ─────────────────────────────────────────────
 // Start Server
 // ─────────────────────────────────────────────
+async function startKafkaServices() {
+  try {
+    await connectProducer();
+    await startNotificationConsumer();
+    await startAuditLoggerConsumer();
+    await startFraudAnalyticsConsumer();
+    console.log("✅ All Kafka consumers running");
+  } catch (err) {
+    console.error("❌ Kafka startup failed:", err);
+    console.log("⚠️  App running without Kafka — check Docker");
+  }
+}
+
 app.listen(env.PORT, () => {
   console.log(`PayShield API listening on http://localhost:${env.PORT}`);
+  void startKafkaServices();
 });

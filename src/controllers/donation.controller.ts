@@ -4,16 +4,43 @@ import { prisma } from "../lib/prisma.js";
 import type { AuthedRequest } from "../middleware/auth.middleware.js";
 import * as stripeService from "../services/stripe.service.js";
 import { env } from "../config/env.js";
+import redis from "../config/redis.config.js";
+import {
+  publishDonationCreated,
+  publishDonationProcessed,
+  publishFraudFlagged,
+} from "../services/kafka.service.js";
 
 // ─────────────────────────────────────────────
 // Validation Schemas
 // ─────────────────────────────────────────────
 
-const createOrderSchema = z.object({
-  campaignId: z.string().min(1, "campaignId is required"),
-  amount: z.number().positive("amount must be a positive number"),
-  currency: z.string().default("inr"),
-});
+/** Stripe requires the charge to convert to at least ~$0.50 USD; ₹1 is rejected. */
+const MIN_DONATION_INR = 50;
+const MIN_DONATION_USD = 0.5;
+
+const createOrderSchema = z
+  .object({
+    campaignId: z.string().min(1, "campaignId is required"),
+    amount: z.number().positive("amount must be a positive number"),
+    currency: z.string().default("inr"),
+  })
+  .superRefine((data, ctx) => {
+    const c = data.currency.toLowerCase();
+    if (c === "inr" && data.amount < MIN_DONATION_INR) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Minimum donation is ₹${MIN_DONATION_INR} for card checkout (Stripe).`,
+        path: ["amount"],
+      });
+    } else if (c === "usd" && data.amount < MIN_DONATION_USD) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Minimum donation is $${MIN_DONATION_USD} for card checkout (Stripe).`,
+        path: ["amount"],
+      });
+    }
+  });
 
 const verifySchema = z.object({
   sessionId: z.string().min(1, "sessionId is required"),
@@ -49,6 +76,23 @@ export async function createOrder(req: AuthedRequest, res: Response) {
     // 2. Read fraud result attached by fraudCheckMiddleware (if it ran)
     const fraudResult = (req as any).fraudResult;
 
+    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const existingPending = await prisma.donation.findFirst({
+      where: {
+        donorId: req.user.id,
+        campaignId,
+        status: "PENDING",
+        createdAt: { gte: thirtyMinutesAgo },
+      },
+    });
+
+    if (existingPending) {
+      await prisma.donation.update({
+        where: { id: existingPending.id },
+        data: { status: "FAILED" },
+      });
+    }
+
     // 3. Create the Donation record in PENDING state
     const donation = await prisma.donation.create({
       data: {
@@ -63,20 +107,51 @@ export async function createOrder(req: AuthedRequest, res: Response) {
       },
     });
 
-    // 4. Create Stripe Checkout Session
+    // 4. Create a new Stripe Checkout Session (each attempt must use a fresh session)
     const session = await stripeService.createCheckoutSession(
       amount,
       currency,
       donation.id,
       campaign.title,
-      campaign.id
+      campaign.id,
+      req.user.email,
+      req.user.id
     );
 
     // 5. Persist the Stripe session ID on the donation record
-    await prisma.donation.update({
+    const updatedDonation = await prisma.donation.update({
       where: { id: donation.id },
       data: { stripeSessionId: session.id },
     });
+
+    try {
+      await publishDonationCreated({
+        donationId: updatedDonation.id,
+        userId: req.user.id,
+        campaignId,
+        amount: Number(amount),
+        stripeSessionId: session.id,
+        riskScore: fraudResult?.riskScore || 0,
+        flags: fraudResult?.fraudFlags || [],
+        userEmail: req.user.email,
+        userName: req.user.email.split("@")[0] || "Donor",
+        campaignTitle: campaign.title,
+      });
+
+      if (fraudResult?.decision === "REVIEW") {
+        await publishFraudFlagged({
+          donationId: updatedDonation.id,
+          userId: req.user.id,
+          amount: Number(amount),
+          riskScore: fraudResult.riskScore,
+          flags: fraudResult.fraudFlags,
+          signals: fraudResult.signals,
+          ipAddress: req.ip || "",
+        });
+      }
+    } catch (kafkaErr) {
+      console.error("[createOrder] Kafka publish skipped:", kafkaErr);
+    }
 
     // 6. Return success with the Stripe checkout URL
     return res.status(200).json({
@@ -114,13 +189,6 @@ export async function verify(req: AuthedRequest, res: Response) {
   const { sessionId } = parsed.data;
 
   try {
-    // 1. Check payment status with Stripe
-    const { isValid, paymentIntentId } = await stripeService.verifyPayment(sessionId);
-    if (!isValid) {
-      return res.status(400).json({ success: false, message: "Payment not successful" });
-    }
-
-    // 2. Find the donation by Stripe session ID
     const donation = await prisma.donation.findFirst({
       where: { stripeSessionId: sessionId },
     });
@@ -129,17 +197,52 @@ export async function verify(req: AuthedRequest, res: Response) {
       return res.status(404).json({ success: false, message: "Donation not found" });
     }
 
-    // 3. Idempotency: skip if already verified
+    if (donation.donorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+
     if (donation.status === "SUCCESS") {
       return res.status(200).json({
         success: true,
         message: "Payment already verified",
         status: "SUCCESS",
+        alreadyProcessed: true,
+        donation: {
+          id: donation.id,
+          amount: donation.amount,
+          campaignId: donation.campaignId,
+          status: donation.status,
+        },
       });
     }
 
-    // 4. Mark donation as SUCCESS and save payment intent ID
-    await prisma.donation.update({
+    if (donation.status !== "PENDING") {
+      return res.status(400).json({
+        success: false,
+        error: "Cannot verify donation with status: " + donation.status,
+        message: "Cannot verify donation with status: " + donation.status,
+      });
+    }
+
+    const session = await stripeService.stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.payment_status !== "paid") {
+      await prisma.donation.update({
+        where: { id: donation.id },
+        data: { status: "FAILED" },
+      });
+      return res.status(400).json({ success: false, message: "Payment not completed" });
+    }
+
+    const paymentIntentRaw = session.payment_intent;
+    const paymentIntentId =
+      typeof paymentIntentRaw === "string"
+        ? paymentIntentRaw
+        : paymentIntentRaw && typeof paymentIntentRaw === "object" && "id" in paymentIntentRaw
+          ? (paymentIntentRaw as { id: string }).id
+          : undefined;
+
+    const updatedDonation = await prisma.donation.update({
       where: { id: donation.id },
       data: {
         status: "SUCCESS",
@@ -147,16 +250,55 @@ export async function verify(req: AuthedRequest, res: Response) {
       },
     });
 
-    // 5. Increment campaign raised amount
-    await prisma.campaign.update({
+    const updatedCampaign = await prisma.campaign.update({
       where: { id: donation.campaignId },
       data: { raisedAmount: { increment: donation.amount } },
     });
+
+    const dupKey = `campaign_donate:${donation.donorId}:${donation.campaignId}`;
+    try {
+      await redis.set(dupKey, "1", "EX", 86400);
+    } catch {
+      /* non-fatal */
+    }
+
+    const donationWithRelations = await prisma.donation.findUnique({
+      where: { id: updatedDonation.id },
+      include: {
+        donor: { select: { email: true, name: true } },
+        campaign: { select: { title: true } },
+      },
+    });
+
+    if (donationWithRelations) {
+      try {
+        await publishDonationProcessed({
+          donationId: donationWithRelations.id,
+          userId: donationWithRelations.donorId,
+          campaignId: donationWithRelations.campaignId,
+          amount: donationWithRelations.amount,
+          stripePaymentIntentId: paymentIntentId || "",
+          userEmail: donationWithRelations.donor.email,
+          userName: donationWithRelations.donor.name,
+          campaignTitle: donationWithRelations.campaign.title,
+          newRaisedAmount: updatedCampaign.raisedAmount,
+        });
+      } catch (kafkaErr) {
+        console.error("[verify] Kafka publish skipped:", kafkaErr);
+      }
+    }
 
     return res.status(200).json({
       success: true,
       message: "Payment verified successfully",
       status: "SUCCESS",
+      alreadyProcessed: false,
+      donation: {
+        id: updatedDonation.id,
+        amount: updatedDonation.amount,
+        campaignId: updatedDonation.campaignId,
+        status: updatedDonation.status,
+      },
     });
   } catch (e: any) {
     console.error("[verify] Error:", e);

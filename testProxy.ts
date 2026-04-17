@@ -6,7 +6,11 @@ async function run() {
     const user = await prisma.user.findFirst();
     if (!user) return;
 
-    const token = jwt.sign({ sub: user.id, email: user.email, role: user.role }, "payshield_dev_access_secret_min_32_chars!!");
+    const token = jwt.sign(
+      { sub: user.id, email: user.email, role: user.role },
+      "payshield_dev_access_secret_min_32_chars!!",
+      { expiresIn: "15m" }
+    );
 
     console.log("Fetching health via next proxy...");
     const resH = await fetch("http://localhost:3000/api/health");

@@ -26,11 +26,16 @@ export async function checkRateLimit(params: {
   remaining: number;
   resetAt: number;
 }> {
+  const now = Date.now();
   if (!isRedisReady()) {
-    throw new Error('Redis unavailable for rate limiting');
+    return {
+      allowed: true,
+      count: 0,
+      remaining: params.limit,
+      resetAt: now + params.windowMs,
+    };
   }
 
-  const now = Date.now();
   const result = await redis.eval(
     slidingWindowLua, 1,
     params.identifier,
