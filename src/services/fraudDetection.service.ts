@@ -70,6 +70,28 @@ export async function analyzeFraud(payload: {
     reasons.push('High number of requests from the same IP in the last 60 seconds.');
   }
 
+  const dailyKey = `daily:user:${payload.userId}`;
+  await redis.incr(dailyKey);
+  const ttl = await redis.ttl(dailyKey);
+  if (ttl === -1) await redis.expire(dailyKey, 86400);
+  const dailyCount = parseInt((await redis.get(dailyKey)) || '0', 10);
+
+  if (dailyCount > 10) {
+    signals.velocityScore = Math.min(30, signals.velocityScore + 20);
+    flags.push('DAILY_LIMIT_EXCEEDED');
+    reasons.push('More than 10 donation attempts in the last 24 hours from this account.');
+  }
+
+  const amountKey = `amount:user:${payload.userId}:${payload.amount}`;
+  const amountCount = await redis.incr(amountKey);
+  await redis.expire(amountKey, 86400);
+
+  if (amountCount > 3) {
+    signals.behaviorScore = Math.min(15, signals.behaviorScore + 15);
+    flags.push('REPEATED_EXACT_AMOUNT');
+    reasons.push('Same donation amount repeated more than 3 times in 24 hours.');
+  }
+
   // ─────────────────────────────────────────────
   // SIGNAL 2 — Amount Anomaly (max 25 points)
   // ─────────────────────────────────────────────
@@ -108,7 +130,7 @@ export async function analyzeFraud(payload: {
     signals.amountScore = Math.min(15, signals.amountScore + 15);
     flags.push('LARGE_ABSOLUTE_AMOUNT');
     // Only 15 points — not enough to block alone
-    // Needs OTHER signals too to reach 61+ (BLOCK)
+    // Needs OTHER signals too to reach 55+ (BLOCK)
     reasons.push('Donation amount exceeds ₹50,000 — high-value transaction flagged for review.');
   }
 
@@ -187,11 +209,11 @@ export async function analyzeFraud(payload: {
   );
 
   let decision: 'ALLOW' | 'REVIEW' | 'BLOCK';
-  if (riskScore >= 61) decision = 'BLOCK';
-  else if (riskScore >= 31) decision = 'REVIEW';
+  if (riskScore >= 55) decision = 'BLOCK';
+  else if (riskScore >= 30) decision = 'REVIEW';
   else decision = 'ALLOW';
 
-  const isFlagged = riskScore >= 31;
+  const isFlagged = riskScore >= 30;
 
   // Cache result in Redis for 1h
   await redis.setex(

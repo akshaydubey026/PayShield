@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth.middleware.js";
+import { adminOnly, requireAuth } from "../middleware/auth.middleware.js";
 import * as donationController from "../controllers/donation.controller.js";
 import { fraudCheckMiddleware } from "../middleware/fraudCheck.middleware.js";
 
@@ -22,6 +22,9 @@ router.post("/verify", requireAuth, donationController.verify);
 // Returns the logged-in user's donation history
 router.get("/my", requireAuth, donationController.myDonations);
 router.get("/my-donations", requireAuth, donationController.myDonations);
+
+// GET /api/donations/all — admin only; query: ?status=&limit=&offset=
+router.get("/all", requireAuth, adminOnly, donationController.getAllDonations);
 
 // GET /api/donations/campaign/:id
 // Returns all successful donations for a given campaign (public)

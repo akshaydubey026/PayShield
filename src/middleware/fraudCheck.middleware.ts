@@ -10,6 +10,12 @@ export async function fraudCheckMiddleware(
   next: NextFunction
 ) {
   try {
+    if ((req as { user?: { role?: string } }).user?.role === "ADMIN") {
+      return res.status(403).json({
+        error: "Admins cannot make donations",
+      });
+    }
+
     const userId = (req as any).user?.id;
     const ipAddress =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||

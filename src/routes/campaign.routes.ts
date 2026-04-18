@@ -5,6 +5,7 @@ import * as campaignController from "../controllers/campaign.controller.js";
 const originRouter = Router();
 
 originRouter.get("/", campaignController.getAll);
+originRouter.get("/my", requireAuth, campaignController.getMyCampaigns);
 originRouter.get("/:id", campaignController.getById);
 
 originRouter.post("/", requireAuth, campaignController.create);

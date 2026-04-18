@@ -5,11 +5,54 @@ import type { AuthedRequest } from "../middleware/auth.middleware.js";
 
 const createCampaignSchema = z.object({
   title: z.string().min(5),
-  description: z.string().min(20),
-  goalAmount: z.number().positive(),
-  imageUrl: z.string().url().optional(),
-  category: z.string(),
+  description: z.string().min(50),
+  goalAmount: z.coerce.number().min(1000),
+  category: z.enum(["Education", "Health", "Environment", "Relief", "Elderly"]),
+  imageUrl: z
+    .union([z.string().url(), z.literal("")])
+    .optional()
+    .transform((v) => (v === "" || v === undefined ? undefined : v)),
 });
+
+export async function getMyCampaigns(req: AuthedRequest, res: Response) {
+  if (!req.user) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  try {
+    const campaigns = await prisma.campaign.findMany({
+      where: { creatorId: req.user.id },
+      include: {
+        _count: { select: { donations: { where: { status: "SUCCESS" } } } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const enriched = campaigns.map((c) => {
+      const progressPercent =
+        c.goalAmount > 0 ? Math.min(100, (c.raisedAmount / c.goalAmount) * 100) : 0;
+      return {
+        id: c.id,
+        title: c.title,
+        description: c.description,
+        goalAmount: c.goalAmount,
+        raisedAmount: c.raisedAmount,
+        category: c.category,
+        imageUrl: c.imageUrl,
+        isActive: c.isActive,
+        createdAt: c.createdAt,
+        totalRaised: c.raisedAmount,
+        donationCount: c._count.donations,
+        progressPercent,
+      };
+    });
+
+    return res.json({ campaigns: enriched });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Failed to fetch your campaigns" });
+  }
+}
 
 export async function getAll(req: Request, res: Response) {
   try {
@@ -66,26 +109,33 @@ export async function getById(req: Request, res: Response) {
 }
 
 export async function create(req: AuthedRequest, res: Response) {
-  if (req.user?.role !== "CREATOR" && req.user?.role !== "ADMIN") {
-    return res.status(403).json({ message: "Only creators can create campaigns" });
+  if (!req.user || !["ADMIN", "CREATOR"].includes(req.user.role)) {
+    return res.status(403).json({ error: "Only admins and creators can create campaigns" });
   }
 
   const parsed = createCampaignSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ message: "Validation failed", issues: parsed.error.flatten() });
+    const first = parsed.error.issues[0]?.message ?? "Validation failed";
+    return res.status(400).json({ error: first });
   }
 
   try {
     const campaign = await prisma.campaign.create({
       data: {
-        ...parsed.data,
+        title: parsed.data.title,
+        description: parsed.data.description,
+        goalAmount: parsed.data.goalAmount,
+        category: parsed.data.category,
+        imageUrl: parsed.data.imageUrl ?? null,
         creatorId: req.user.id,
+        isActive: true,
       },
+      include: { creator: { select: { id: true, name: true, email: true } } },
     });
-    return res.status(201).json(campaign);
+    return res.status(201).json({ campaign });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ message: "Failed to create campaign" });
+    return res.status(500).json({ error: "Failed to create campaign" });
   }
 }
 
