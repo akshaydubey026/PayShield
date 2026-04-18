@@ -20,6 +20,7 @@ A premium, Full-Stack fintech web application delivering a fraud-aware donation 
   - `bcryptjs` hashing for all passwords.
   - Custom JWT Rotation Strategy allowing infinite session persistence across `accessToken` and HttpOnly `refreshToken` cookies securely.
   - Strict Cross-Origin (CORS) whitelisting properly piped through a direct API proxy loop in Next.js config.
+<<<<<<< HEAD
 
 ---
 
@@ -143,3 +144,5 @@ open http://localhost:8080
 ```
 
 Point `backend/.env` `DATABASE_URL` at `localhost:5433` when using the Compose Postgres service above.
+=======
+>>>>>>> 381246e71cc1129493062d6422b9522e4cde374a
