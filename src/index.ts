@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env.js";
@@ -7,6 +8,7 @@ import campaignRoutes from "./routes/campaign.routes.js";
 import donationRoutes from "./routes/donation.routes.js";
 import fraudRoutes from "./routes/fraud.routes.js";
 import kafkaRouter from "./routes/kafka.routes.js";
+import statsRoutes from "./routes/stats.routes.js";
 import { requireAuth } from "./middleware/auth.middleware.js";
 import { stripeWebhook } from "./controllers/donation.controller.js";
 import { connectProducer } from "./services/kafka.service.js";
@@ -25,6 +27,8 @@ app.use(
     credentials: true,
   })
 );
+
+app.use(compression());
 
 // ─────────────────────────────────────────────
 // STRIPE WEBHOOK — MUST be mounted BEFORE express.json()
@@ -57,6 +61,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/campaigns", campaignRoutes);
 app.use("/api/donations", donationRoutes);
+app.use("/api/stats", requireAuth, statsRoutes);
 app.use("/api/fraud", requireAuth, fraudRoutes);
 app.use("/api/kafka", requireAuth, kafkaRouter);
 

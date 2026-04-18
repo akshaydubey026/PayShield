@@ -74,19 +74,14 @@ originRouter.get("/stats", requireAuth, async (req, res) => {
 originRouter.get("/feed", requireAuth, async (req, res) => {
   try {
     const donations = await prisma.donation.findMany({
-      where: { riskScore: { gt: 0 } },
+      where: {
+        OR: [{ riskScore: { gt: 0 } }, { status: "BLOCKED" }],
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
-      select: {
-        id: true,
-        amount: true,
-        donorId: true,
-        campaignId: true,
-        status: true,
-        riskScore: true,
-        fraudFlags: true,
-        createdAt: true,
-        donor: { select: { name: true } },
+      include: {
+        donor: { select: { name: true, email: true } },
+        campaign: { select: { title: true } },
       },
     });
 

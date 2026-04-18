@@ -1,4 +1,5 @@
 import type { Response, Request } from "express";
+import type { DonationStatus } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import type { AuthedRequest } from "../middleware/auth.middleware.js";
@@ -420,30 +421,77 @@ export async function myDonations(req: AuthedRequest, res: Response) {
 
   try {
     const donations = await prisma.donation.findMany({
-      where: { donorId: req.user.id },
+      where: {
+        donorId: req.user.id,
+        status: { in: ["SUCCESS", "BLOCKED"] },
+        source: { not: "simulation" },
+      },
       select: {
         id: true,
         amount: true,
         status: true,
         createdAt: true,
-        stripeSessionId: true,
         campaign: {
           select: {
             id: true,
             title: true,
-            imageUrl: true,
             category: true,
           },
         },
       },
       orderBy: { createdAt: "desc" },
     });
-    return res.status(200).json({ success: true, donations });
+    return res.status(200).json({ donations });
   } catch (e: any) {
     console.error("[myDonations] Error:", e);
     return res.status(500).json({
       success: false,
       message: e?.message ?? "Failed to fetch donations",
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
+// GET /api/donations/all (admin only)
+// ─────────────────────────────────────────────
+
+const DONATION_STATUSES: DonationStatus[] = ["PENDING", "SUCCESS", "FAILED", "BLOCKED"];
+
+export async function getAllDonations(req: AuthedRequest, res: Response) {
+  try {
+    const statusParam = typeof req.query.status === "string" ? req.query.status : undefined;
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "50"), 10) || 50, 1), 2000);
+    const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+
+    const where: { status?: DonationStatus } = {};
+    if (statusParam && DONATION_STATUSES.includes(statusParam as DonationStatus)) {
+      where.status = statusParam as DonationStatus;
+    }
+
+    const donations = await prisma.donation.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
+      select: {
+        id: true,
+        amount: true,
+        status: true,
+        riskScore: true,
+        fraudFlags: true,
+        createdAt: true,
+        campaignId: true,
+        donor: { select: { name: true, email: true } },
+        campaign: { select: { title: true } },
+      },
+    });
+
+    return res.status(200).json(donations);
+  } catch (e: unknown) {
+    console.error("[getAllDonations] Error:", e);
+    return res.status(500).json({
+      success: false,
+      message: e instanceof Error ? e.message : "Failed to fetch donations",
     });
   }
 }
