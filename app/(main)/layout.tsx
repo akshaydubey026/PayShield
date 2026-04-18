@@ -1,12 +1,60 @@
 "use client";
 
-import { Shield, UserCircle, Settings, Home, ArrowRightLeft, LayoutGrid, Heart } from "lucide-react";
+import {
+  Shield,
+  UserCircle,
+  Settings,
+  Home,
+  ArrowLeftRight,
+  LayoutGrid,
+  Heart,
+  LayoutDashboard,
+  Grid3x3,
+} from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import type { LucideIcon } from "lucide-react";
 import { SidebarProfile } from "@/components/dashboard/SidebarProfile";
+import { SidebarLink } from "@/components/dashboard/SidebarLink";
+import { useAuth } from "@/lib/auth";
+
+type NavItem = {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  prefixMatch?: boolean;
+  badge?: string;
+};
+
+const donorLinks: NavItem[] = [
+  { href: "/dashboard", icon: Home, label: "Dashboard" },
+  { href: "/campaigns", icon: Grid3x3, label: "Campaigns", prefixMatch: true },
+  { href: "/my-donations", icon: Heart, label: "My Donations" },
+  { href: "/settings", icon: Settings, label: "Settings" },
+];
+
+const creatorLinks: NavItem[] = [
+  { href: "/dashboard", icon: Home, label: "Dashboard" },
+  { href: "/campaigns", icon: Grid3x3, label: "Campaigns", prefixMatch: true },
+  { href: "/my-campaigns", icon: LayoutGrid, label: "My Campaigns" },
+  { href: "/settings", icon: Settings, label: "Settings" },
+];
+
+const adminLinks: NavItem[] = [
+  { href: "/overview", icon: LayoutDashboard, label: "Overview" },
+  { href: "/transactions", icon: ArrowLeftRight, label: "Transactions" },
+  { href: "/dashboard", icon: Home, label: "Dashboard" },
+  { href: "/campaigns", icon: Grid3x3, label: "Campaigns", prefixMatch: true },
+  { href: "/my-donations", icon: Heart, label: "My Donations" },
+  { href: "/fraud-demo", icon: Shield, label: "Fraud Demo", badge: "LIVE" },
+  { href: "/settings", icon: Settings, label: "Settings" },
+];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const { user } = useAuth();
+
+  const links: NavItem[] =
+    user?.role === "ADMIN" ? adminLinks : user?.role === "CREATOR" ? creatorLinks : donorLinks;
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#050814] text-white">
       {/* Sidebar */}
@@ -16,32 +64,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span className="text-lg font-bold tracking-tight">PayShield</span>
         </div>
         <nav className="flex-1 space-y-1 p-4">
-          <Link href="/overview" className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${pathname === '/overview' || pathname === '/dashboard' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
-            <Home className="size-5" />
-            <span className="text-sm font-medium">Overview</span>
-          </Link>
-          <Link href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-slate-400 hover:bg-white/5 hover:text-white transition-colors">
-            <ArrowRightLeft className="size-5" />
-            <span className="text-sm font-medium">Transactions</span>
-          </Link>
-          <Link href="/campaigns" className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${pathname.startsWith('/campaigns') ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
-            <LayoutGrid className="size-5" />
-            <span className="text-sm font-medium">Campaigns</span>
-          </Link>
-          <Link href="/my-donations" className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${pathname === '/my-donations' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
-            <Heart className="size-5" />
-            <span className="text-sm font-medium">My Donations</span>
-          </Link>
-          <Link href="/fraud-demo" className={`flex items-center justify-between rounded-lg px-3 py-2 transition-colors ${pathname === '/fraud-demo' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
-            <div className="flex items-center gap-3">
-              <Shield className="size-5" />
-              <span className="text-sm font-medium">Fraud Demo</span>
-            </div>
-            <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 px-2 py-0.5 rounded border border-red-500/30 bg-red-500/10 tracking-widest">
-              <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
-              LIVE
-            </span>
-          </Link>
+          {links.map((item) => (
+            <SidebarLink
+              key={item.href + item.label}
+              href={item.href}
+              icon={item.icon}
+              label={item.label}
+              prefixMatch={item.prefixMatch}
+              badge={item.badge}
+            />
+          ))}
           <div className="mx-3 rounded-xl border border-white/5 bg-white/[0.03] p-3">
             <p className="mb-2 text-xs font-medium text-gray-500">System Status</p>
             <div className="space-y-1.5">
@@ -61,10 +93,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               ))}
             </div>
           </div>
-          <Link href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-slate-400 hover:bg-white/5 hover:text-white transition-colors">
-            <Settings className="size-5" />
-            <span className="text-sm font-medium">Settings</span>
-          </Link>
         </nav>
         <div className="border-t border-white/10 p-4">
           <SidebarProfile />
@@ -75,16 +103,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Mobile Header */}
         <header className="flex h-16 items-center justify-between border-b border-white/10 bg-[#0A0F1E] px-4 lg:hidden">
-          <div className="flex items-center gap-2">
+          <Link href="/dashboard" className="flex items-center gap-2">
             <Shield className="size-6 text-blue-500" />
             <span className="font-bold">PayShield</span>
-          </div>
+          </Link>
           <UserCircle className="size-8 text-blue-400" />
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 md:p-10">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto p-6 md:p-10">{children}</main>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import axios from "axios";
 import { AlertTriangle, CheckCircle2, ShieldCheck, Target, Users, X } from "lucide-react";
@@ -9,24 +10,26 @@ import { getCampaignById, type Campaign, type Donation, verifyDonation } from "@
 import { ProgressBar } from "@/components/campaigns/ProgressBar";
 import { DonateModal } from "@/components/campaigns/DonateModal";
 import { useAuth } from "@/lib/auth";
+import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "sonner";
 
 const getCategoryImage = (category: string): string => {
   const normalized = category?.trim().toLowerCase();
   const map: Record<string, string> = {
-    'education': 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=1200&q=80',
-    'health': 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=1200&q=80',
-    'environment': 'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=1200&q=80',
-    'relief': 'https://images.unsplash.com/photo-1593113598332-cd288d649433?w=1200&q=80',
-    'elderly': 'https://images.unsplash.com/photo-1447005497901-b3e9ee359928?w=1200&q=80',
-    'water': 'https://images.unsplash.com/photo-1538300342682-ffa5ba1b9186?w=1200&q=80'
+    education: "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=800&q=80",
+    health: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800&q=80",
+    environment: "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=800&q=80",
+    relief: "https://images.unsplash.com/photo-1593113598332-cd288d649433?w=800&q=80",
+    elderly: "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?w=800&q=80",
+    water: "https://images.unsplash.com/photo-1538300342682-ffa5ba1b9186?w=800&q=80",
   };
-  return map[normalized] || map['relief'];
+  return map[normalized] || map["relief"];
 };
 
 export default function CampaignDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
   const [campaign, setCampaign] = useState<(Campaign & { donations: Donation[] }) | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +86,9 @@ export default function CampaignDetailPage() {
             } else {
               toast.success("Thank you! Your donation was received successfully 🎉");
             }
+            void queryClient.invalidateQueries({ queryKey: queryKeys.myDonations(user.id) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.donorSummary(user.id) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.campaigns });
             fetchCampaign();
             setTimeout(() => fetchCampaign(), 1200);
             window.history.replaceState(null, "", `/campaigns/${campaignPathId}`);
@@ -129,7 +135,7 @@ export default function CampaignDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, authLoading, user, params.id]);
+  }, [searchParams, authLoading, user, params.id, queryClient]);
 
   if (loading) {
     return (
@@ -149,6 +155,7 @@ export default function CampaignDetailPage() {
 
   const percentage = (campaign.raisedAmount / campaign.goalAmount) * 100;
   const image = getCategoryImage(campaign.category);
+  const showDonate = user?.role !== "CREATOR" && user?.role !== "ADMIN";
 
   return (
     <motion.div 
@@ -304,28 +311,38 @@ export default function CampaignDetailPage() {
               </div>
             </div>
 
-            <button
-              onClick={() => setModalOpen(true)}
-              className="mt-6 w-full rounded-xl bg-blue-600 py-4 text-lg font-bold text-white transition-all hover:bg-blue-500 hover:shadow-[0_0_20px_-3px_rgba(37,99,235,0.4)] active:scale-95"
-            >
-              Donate Now
-            </button>
-            <p className="mt-3 text-center text-xs text-slate-500 flex items-center justify-center gap-1">
-              <ShieldCheck className="size-3" /> Secure Payment via Stripe Checkout
+            {showDonate ? (
+              <button
+                type="button"
+                onClick={() => setModalOpen(true)}
+                className="mt-6 w-full rounded-xl bg-blue-600 py-4 text-lg font-bold text-white transition-all hover:bg-blue-500 hover:shadow-[0_0_20px_-3px_rgba(37,99,235,0.4)] active:scale-95"
+              >
+                Donate Now
+              </button>
+            ) : (
+              <p className="mt-6 rounded-xl border border-white/10 bg-white/5 py-4 text-center text-sm text-slate-400">
+                Creators cannot donate to campaigns from this account.
+              </p>
+            )}
+            <p className="mt-3 flex items-center justify-center gap-1 text-center text-xs text-slate-500">
+              <ShieldCheck className="size-3" />{" "}
+              {showDonate ? "Secure Payment via Stripe Checkout" : "Supporters use the Donate flow on their donor account."}
             </p>
           </div>
         </div>
       </div>
 
-      <DonateModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        campaignId={campaign.id}
-        campaignTitle={campaign.title}
-        onSuccess={() => {
-          fetchCampaign();
-        }}
-      />
+      {showDonate ? (
+        <DonateModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          campaignId={campaign.id}
+          campaignTitle={campaign.title}
+          onSuccess={() => {
+            fetchCampaign();
+          }}
+        />
+      ) : null}
     </motion.div>
   );
 }

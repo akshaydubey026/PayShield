@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard } from "lucide-react";
+import { LayoutDashboard, Plus } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { FraudMetricCards } from "@/components/dashboard/FraudMetricCards";
 import type { Campaign } from "@/lib/campaigns";
@@ -52,6 +54,22 @@ function countRunningConsumers(status: KafkaStatsResponse["consumerStatus"] | un
 }
 
 export default function OverviewPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && user?.role !== "ADMIN") {
+      router.replace("/dashboard");
+    }
+  }, [user, loading]);
+
+  if (loading || user?.role !== "ADMIN") return null;
+
+  return <OverviewContent />;
+}
+
+function OverviewContent() {
+  const { user } = useAuth();
   const { data: stats } = useQuery({
     queryKey: queryKeys.fraudStats,
     queryFn: () => api.get<FraudStats>("/api/fraud/stats").then((r) => r.data),
@@ -96,7 +114,7 @@ export default function OverviewPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-10 animate-in fade-in duration-500">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight text-white">
             <LayoutDashboard className="size-8 text-blue-500" />
@@ -104,6 +122,15 @@ export default function OverviewPage() {
           </h1>
           <p className="mt-2 text-slate-400">Fraud signals, campaign health, and recent high-risk activity.</p>
         </div>
+        {user && ["ADMIN", "CREATOR"].includes(user.role) && (
+          <Link
+            href="/campaigns/create"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+          >
+            <Plus className="size-4" />
+            New campaign
+          </Link>
+        )}
       </div>
 
       <section className="space-y-4">

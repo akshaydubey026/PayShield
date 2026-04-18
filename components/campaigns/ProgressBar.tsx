@@ -1,7 +1,7 @@
 "use client";
 
+import { memo, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
 
 type ProgressBarProps = {
   percentage: number;
@@ -9,7 +9,11 @@ type ProgressBarProps = {
   showLabel?: boolean;
 };
 
-export function ProgressBar({ percentage, color = "bg-blue-500", showLabel = false }: ProgressBarProps) {
+export const ProgressBar = memo(function ProgressBar({
+  percentage,
+  color = "bg-blue-500",
+  showLabel = false,
+}: ProgressBarProps) {
   const [mounted, setMounted] = useState(false);
   const clamped = Math.min(Math.max(percentage, 0), 100);
 
@@ -35,4 +39,4 @@ export function ProgressBar({ percentage, color = "bg-blue-500", showLabel = fal
       </div>
     </div>
   );
-}
+});

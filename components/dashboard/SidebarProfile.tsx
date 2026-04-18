@@ -18,7 +18,7 @@ export function SidebarProfile() {
     );
   }
 
-  if (!loading && !user) {
+  if (!user) {
     return (
       <Link
         href="/login"

@@ -1,14 +1,19 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, Target, Server, Activity } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { Shield, Target, Server, CheckCircle, Clock, ShieldX, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { FraudMetricCards } from "@/components/dashboard/FraudMetricCards";
 import { EventTimeline } from "@/components/kafka/EventTimeline";
+
+const FraudBarChart = dynamic(() => import("@/components/fraud/FraudBarChart"), {
+  loading: () => <div className="h-80 animate-pulse rounded-xl bg-white/5" />,
+  ssr: false,
+});
 
 type FraudStats = {
   totalBlocked: number;
@@ -66,7 +71,44 @@ type KafkaStatsResponse = {
   };
 };
 
+function FeedStatusBadge({ status }: { status: string }) {
+  const s = (status || "").toUpperCase();
+  const config: Record<string, { className: string; Icon: typeof CheckCircle; label: string }> = {
+    SUCCESS: {
+      className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+      Icon: CheckCircle,
+      label: "Verified",
+    },
+    PENDING: {
+      className: "bg-amber-500/15 text-amber-400 border-amber-500/20",
+      Icon: Clock,
+      label: "Under Review",
+    },
+    BLOCKED: {
+      className: "bg-red-500/15 text-red-400 border-red-500/20",
+      Icon: ShieldX,
+      label: "Blocked",
+    },
+    FAILED: {
+      className: "bg-gray-500/15 text-gray-400 border-gray-500/20",
+      Icon: XCircle,
+      label: "Failed",
+    },
+  };
+  const c = config[s] ?? config.FAILED;
+  const Icon = c.Icon;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${c.className}`}
+    >
+      <Icon className="size-3" />
+      {c.label}
+    </span>
+  );
+}
+
 export default function FraudDemoPage() {
+  const queryClient = useQueryClient();
   const [logs, setLogs] = useState<string[]>([]);
   const [activeAnalysis, setActiveAnalysis] = useState<ActiveAnalysis | null>(null);
   const [campaignId, setCampaignId] = useState<string>("");
@@ -92,7 +134,8 @@ export default function FraudDemoPage() {
   const { data: feed = [] } = useQuery({
     queryKey: queryKeys.fraudFeed,
     queryFn: () => api.get<DonationFeed[]>("/api/fraud/feed").then((r) => r.data),
-    refetchInterval: 5_000,
+    refetchInterval: 3_000,
+    refetchIntervalInBackground: true,
   });
 
   const { data: kafkaStats } = useQuery({
@@ -119,9 +162,11 @@ export default function FraudDemoPage() {
     return `${n} Active`;
   }, [kafkaStats?.consumerStatus]);
 
-  const addLog = (msg: string) => {
-    const time = new Date().toLocaleTimeString();
-    setLogs((prev) => [`[${time}] ${msg}`, ...prev].slice(0, 10));
+  const refetchFraudQueries = async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.fraudFeed });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.fraudStats });
+    await queryClient.refetchQueries({ queryKey: queryKeys.fraudFeed });
+    await queryClient.refetchQueries({ queryKey: queryKeys.fraudStats });
   };
 
   const simulateVelocity = async () => {
@@ -129,82 +174,118 @@ export default function FraudDemoPage() {
     setSimulating(true);
     setLogs([]);
     setActiveAnalysis(null);
+    const nextLogs: string[] = [];
 
-    for (let i = 1; i <= 6; i++) {
-      try {
-        await api.post("/api/donations/create-order", { campaignId, amount: 100 });
-        addLog(`Request ${i} → ALLOW (score: 0)`);
-      } catch (e: unknown) {
-        const error = e as ApiError;
-        if (error.response?.status === 403) {
-          const riskScore = error.response.data?.riskScore ?? 0;
-          const flags = error.response.data?.flags ?? [];
-          const signals = error.response.data?.signals;
-          if (!signals) continue;
-          addLog(`Request ${i} → BLOCK (score: ${riskScore}) ${flags.join(", ")}`);
-          setActiveAnalysis({ score: riskScore, decision: 'BLOCK', signals });
-          break;
-        } else if (error.response?.status === 429) {
-          addLog(`Request ${i} → RATELIMIT (please wait)`);
-          break;
+    try {
+      for (let i = 1; i <= 6; i++) {
+        const time = new Date().toLocaleTimeString();
+        try {
+          await api.post("/api/donations/create-order", {
+            campaignId,
+            amount: 100,
+            isSimulation: true,
+          });
+          nextLogs.push(`[${time}] Request ${i} → ALLOW (score: 0)`);
+        } catch (e: unknown) {
+          const error = e as ApiError;
+          if (error.response?.status === 403) {
+            const riskScore = error.response.data?.riskScore ?? "?";
+            const flags = (error.response.data?.flags ?? []).join(", ");
+            const signals = error.response.data?.signals;
+            nextLogs.push(`[${time}] Request ${i} → BLOCK (score: ${riskScore}) ${flags}`);
+            setLogs([...nextLogs]);
+            const rs = error.response.data?.riskScore;
+            if (signals && typeof rs === "number") {
+              setActiveAnalysis({ score: rs, decision: "BLOCK", signals });
+            }
+            break;
+          }
+          if (error.response?.status === 429) {
+            nextLogs.push(`[${time}] Request ${i} → RATE LIMITED`);
+            setLogs([...nextLogs]);
+            break;
+          }
+          nextLogs.push(`[${time}] Request ${i} → ERROR`);
         }
+        setLogs([...nextLogs]);
+        await new Promise((r) => setTimeout(r, 500));
       }
-      await new Promise((r) => setTimeout(r, 600)); // tight loop
+    } finally {
+      setSimulating(false);
+      await refetchFraudQueries();
     }
-    setSimulating(false);
   };
 
   const simulateSpike = async () => {
     if (!campaignId) return;
     setSimulating(true);
     setLogs([]);
-    
+    setActiveAnalysis(null);
+
     try {
-      await api.post("/api/donations/create-order", { campaignId, amount: 9999999 });
-      addLog(`Request → ALLOW`);
-    } catch (e: unknown) {
-      const error = e as ApiError;
-      if (error.response?.status === 403) {
-        const riskScore = error.response.data?.riskScore ?? 0;
-        const flags = error.response.data?.flags ?? [];
-        const signals = error.response.data?.signals;
-        if (!signals) {
-          setSimulating(false);
-          return;
+      const time = new Date().toLocaleTimeString();
+      try {
+        await api.post("/api/donations/create-order", {
+          campaignId,
+          amount: 9999999,
+          isSimulation: true,
+        });
+        setLogs([`[${time}] Request → CHECKOUT CREATED (review risk on feed)`]);
+      } catch (e: unknown) {
+        const error = e as ApiError;
+        if (error.response?.status === 403) {
+          const riskScore = error.response.data?.riskScore ?? "?";
+          const flags = (error.response.data?.flags ?? []).join(", ");
+          const signals = error.response.data?.signals;
+          setLogs([`[${time}] Request → BLOCK (score: ${riskScore}) ${flags}`]);
+          const rs = error.response.data?.riskScore;
+          if (signals && typeof rs === "number") {
+            setActiveAnalysis({ score: rs, decision: "BLOCK", signals });
+          }
+        } else {
+          setLogs([`[${time}] Request → ERROR`]);
         }
-        addLog(`Request → BLOCK (score: ${riskScore}) ${flags[0]}`);
-        setActiveAnalysis({ score: riskScore, decision: 'BLOCK', signals });
       }
+    } finally {
+      setSimulating(false);
+      await refetchFraudQueries();
     }
-    setSimulating(false);
   };
 
   const simulateBot = async () => {
     if (!campaignId) return;
     setSimulating(true);
     setLogs([]);
-    
+    setActiveAnalysis(null);
+
     try {
-      await api.post("/api/donations/create-order", 
-        { campaignId, amount: 500 },
-        { headers: { 'User-Agent': 'curl/7.68.0' } }
-      );
-      addLog(`Request → ALLOW`);
-    } catch (e: unknown) {
-      const error = e as ApiError;
-      if (error.response?.status === 403) {
-        const riskScore = error.response.data?.riskScore ?? 0;
-        const flags = error.response.data?.flags ?? [];
-        const signals = error.response.data?.signals;
-        if (!signals) {
-          setSimulating(false);
-          return;
+      const time = new Date().toLocaleTimeString();
+      try {
+        await api.post(
+          "/api/donations/create-order",
+          { campaignId, amount: 500, isSimulation: true },
+          { headers: { "User-Agent": "curl/7.68.0" } }
+        );
+        setLogs([`[${time}] Request → CHECKOUT CREATED (review risk on feed)`]);
+      } catch (e: unknown) {
+        const error = e as ApiError;
+        if (error.response?.status === 403) {
+          const riskScore = error.response.data?.riskScore ?? "?";
+          const flags = (error.response.data?.flags ?? []).join(", ");
+          const signals = error.response.data?.signals;
+          setLogs([`[${time}] Request → BLOCK (score: ${riskScore}) ${flags}`]);
+          const rs = error.response.data?.riskScore;
+          if (signals && typeof rs === "number") {
+            setActiveAnalysis({ score: rs, decision: "BLOCK", signals });
+          }
+        } else {
+          setLogs([`[${time}] Request → ERROR`]);
         }
-        addLog(`Request → BLOCK (score: ${riskScore}) ${flags[0]}`);
-        setActiveAnalysis({ score: riskScore, decision: 'BLOCK', signals });
       }
+    } finally {
+      setSimulating(false);
+      await refetchFraudQueries();
     }
-    setSimulating(false);
   };
 
   return (
@@ -260,28 +341,7 @@ export default function FraudDemoPage() {
         
         {/* SECTION 1: LIVE FEED & CHARTS */}
         <div className="space-y-8 lg:col-span-2">
-          {/* Chart */}
-          <div className="rounded-2xl border border-white/10 bg-[#0A0F1E] p-6 shadow-xl h-80">
-            <h3 className="mb-6 text-lg font-bold text-white flex items-center gap-2">
-              <Activity className="size-5 text-blue-500" /> Top Fraud Flags Triggered
-            </h3>
-            {stats?.topFlags && stats.topFlags.length > 0 ? (
-              <ResponsiveContainer width="100%" height="80%">
-                <BarChart data={stats.topFlags} layout="vertical" margin={{ top: 0, right: 30, left: 40, bottom: 0 }}>
-                  <XAxis type="number" hide />
-                  <YAxis dataKey="flag" type="category" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} width={120} />
-                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.05)" }} contentStyle={{ backgroundColor: "#0A0F1E", borderColor: "rgba(255,255,255,0.1)" }} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                    {stats.topFlags.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill="#EF4444" fillOpacity={0.8 - (index * 0.15)} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-slate-500">Not enough data to display chart</div>
-            )}
-          </div>
+          <FraudBarChart topFlags={stats?.topFlags} />
 
           {/* Feed */}
           <div className="rounded-2xl border border-white/10 bg-[#0A0F1E] p-6 shadow-xl overflow-hidden">
@@ -289,7 +349,7 @@ export default function FraudDemoPage() {
                <h3 className="text-lg font-bold text-white flex items-center gap-2">
                  <Server className="size-5 text-emerald-500" /> Live Evaluation Feed
                </h3>
-               <span className="text-xs text-slate-500">Auto-refreshing 5s...</span>
+               <span className="text-xs text-slate-500">Auto-refreshing 3s...</span>
              </div>
              
              <div className="w-full overflow-x-auto">
@@ -327,13 +387,7 @@ export default function FraudDemoPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                              d.status === 'BLOCKED' ? 'bg-red-500 text-white' : 
-                              d.status === 'SUCCESS' ? 'bg-emerald-500 text-white' : 
-                              'bg-amber-500 text-white'
-                            }`}>
-                              {d.status}
-                            </span>
+                            <FeedStatusBadge status={d.status} />
                           </td>
                           <td className="px-4 py-3 text-xs opacity-80">{d.fraudFlags.join(", ") || "-"}</td>
                         </motion.tr>

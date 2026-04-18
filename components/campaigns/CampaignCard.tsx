@@ -1,6 +1,11 @@
+"use client";
+
+import Image from "next/image";
+import { memo } from "react";
 import { Shield, Heart, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth";
 
 type CampaignCardProps = {
   id: string;
@@ -16,94 +21,99 @@ type CampaignCardProps = {
 const getCategoryImage = (category: string): string => {
   const normalized = category?.trim().toLowerCase();
   const map: Record<string, string> = {
-    'education': 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=700&q=80',
-    'health': 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=700&q=80',
-    'environment': 'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=700&q=80',
-    'relief': 'https://images.unsplash.com/photo-1593113598332-cd288d649433?w=700&q=80',
-    'elderly': 'https://images.unsplash.com/photo-1447005497901-b3e9ee359928?w=700&q=80',
-    // Fallback if water specific category exists
-    'water': 'https://images.unsplash.com/photo-1538300342682-ffa5ba1b9186?w=700&q=80'
+    education: "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=800&q=80",
+    health: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800&q=80",
+    environment: "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=800&q=80",
+    relief: "https://images.unsplash.com/photo-1593113598332-cd288d649433?w=800&q=80",
+    elderly: "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?w=800&q=80",
+    water: "https://images.unsplash.com/photo-1538300342682-ffa5ba1b9186?w=800&q=80",
   };
-  return map[normalized] || map['relief'];
+  return map[normalized] || map["relief"];
 };
 
 const categoryBarColors: Record<string, string> = {
-  Education: 'bg-blue-500',
-  Health: 'bg-emerald-500', 
-  Environment: 'bg-teal-500',
-  Relief: 'bg-amber-500',
-  Elderly: 'bg-purple-500',
+  Education: "bg-blue-500",
+  Health: "bg-emerald-500",
+  Environment: "bg-teal-500",
+  Relief: "bg-amber-500",
+  Elderly: "bg-purple-500",
 };
 
 const categoryColors: Record<string, string> = {
-  Education: 'bg-blue-500/20 text-blue-300',
-  Health: 'bg-emerald-500/20 text-emerald-300',
-  Environment: 'bg-teal-500/20 text-teal-300', 
-  Relief: 'bg-amber-500/20 text-amber-300',
-  Elderly: 'bg-purple-500/20 text-purple-300',
+  Education: "bg-blue-500/20 text-blue-300",
+  Health: "bg-emerald-500/20 text-emerald-300",
+  Environment: "bg-teal-500/20 text-teal-300",
+  Relief: "bg-amber-500/20 text-amber-300",
+  Elderly: "bg-purple-500/20 text-purple-300",
 };
 
-export function CampaignCard({ id, title, description, goalAmount, raisedAmount, category, donorCount, index = 0 }: CampaignCardProps) {
+export const CampaignCard = memo(function CampaignCard({
+  id,
+  title,
+  description,
+  goalAmount,
+  raisedAmount,
+  category,
+  donorCount,
+  index = 0,
+}: CampaignCardProps) {
+  const { user } = useAuth();
   const percentage = (raisedAmount / goalAmount) * 100;
   const image = getCategoryImage(category);
   const barColor = categoryBarColors[category] || "bg-slate-500";
   const catColor = categoryColors[category] || "bg-slate-500/20 text-slate-300";
+  const hideDonate = user?.role === "CREATOR" || user?.role === "ADMIN";
 
   return (
-    <Link href={`/campaigns/${id}`}>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: index * 0.1 }}
-        whileHover={{ y: -4, transition: { duration: 0.2 } }}
-        className="group bg-white/5 border border-white/10 rounded-2xl overflow-hidden cursor-pointer hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 flex flex-col h-full"
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: index * 0.1 }}
+      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition-all duration-300 hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/10"
+    >
+      <Link
+        href={`/campaigns/${id}`}
+        className="flex min-h-0 flex-1 cursor-pointer flex-col focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
       >
-        {/* Image section */}
-        <div className="relative h-48 overflow-hidden rounded-t-2xl flex-shrink-0">
-          <img 
+        <div className="relative h-48 shrink-0 overflow-hidden rounded-t-2xl">
+          <Image
             src={image}
             alt={title}
-            className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
+            fill
+            className="object-cover object-center transition-transform duration-700 group-hover:scale-105"
+            sizes="(max-width: 768px) 100vw, 33vw"
+            unoptimized
           />
-          {/* Dark gradient overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#0A0F1E] via-black/30 to-transparent" />
-          
-          {/* Category badge */}
+
           <div className="absolute bottom-3 left-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm border border-white/20 ${catColor}`}>
+            <span
+              className={`rounded-full border border-white/20 px-3 py-1 text-xs font-semibold backdrop-blur-sm ${catColor}`}
+            >
               {category}
             </span>
           </div>
-          
-          {/* Verified shield */}
-          <div className="absolute top-3 right-3">
-            <div className="bg-blue-500/20 backdrop-blur-sm border border-blue-500/30 rounded-full p-1.5 shadow-lg">
-              <Shield className="w-4 h-4 text-blue-400" />
+
+          <div className="absolute right-3 top-3">
+            <div className="rounded-full border border-blue-500/30 bg-blue-500/20 p-1.5 shadow-lg backdrop-blur-sm">
+              <Shield className="h-4 w-4 text-blue-400" />
             </div>
           </div>
         </div>
 
-        {/* Card body */}
-        <div className="flex flex-col flex-1 p-5">
-          <h3 className="font-bold text-white text-lg mb-2 line-clamp-1 group-hover:text-blue-400 transition-colors duration-200">
+        <div className="flex flex-1 flex-col p-5">
+          <h3 className="mb-2 line-clamp-1 text-lg font-bold text-white transition-colors duration-200 group-hover:text-blue-400">
             {title}
           </h3>
-          <p className="text-gray-400 text-sm line-clamp-2 mb-4 leading-relaxed">
-            {description}
-          </p>
-          
-          {/* Progress section - dynamically pushed to bottom */}
+          <p className="mb-4 line-clamp-2 text-sm leading-relaxed text-gray-400">{description}</p>
+
           <div className="mt-auto">
-            <div className="flex justify-between text-xs mb-2">
-              <span className="text-white font-semibold">
-                ₹{raisedAmount.toLocaleString('en-IN')} raised
-              </span>
-              <span className="text-gray-500">
-                of ₹{goalAmount.toLocaleString('en-IN')}
-              </span>
+            <div className="mb-2 flex justify-between text-xs">
+              <span className="font-semibold text-white">₹{raisedAmount.toLocaleString("en-IN")} raised</span>
+              <span className="text-gray-500">of ₹{goalAmount.toLocaleString("en-IN")}</span>
             </div>
-            {/* Animated progress bar */}
-            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
               <motion.div
                 className={`h-full rounded-full ${barColor}`}
                 initial={{ width: 0 }}
@@ -111,28 +121,29 @@ export function CampaignCard({ id, title, description, goalAmount, raisedAmount,
                 transition={{ duration: 1.2, ease: "easeOut", delay: 0.2 }}
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1.5">
-              {percentage.toFixed(0)}% funded
-            </p>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-4 border-t border-white/10 mt-4">
-            <div className="flex items-center gap-1.5 text-gray-400 text-xs">
-              <Users className="w-4 h-4" />
-              <span>{donorCount} donors</span>
-            </div>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition-colors duration-200 flex items-center gap-1.5 shadow-lg shadow-blue-500/20"
-            >
-              <Heart className="w-3.5 h-3.5" />
-              Donate
-            </motion.button>
+            <p className="mt-1.5 text-xs text-gray-500">{percentage.toFixed(0)}% funded</p>
           </div>
         </div>
-      </motion.div>
-    </Link>
+      </Link>
+
+      <div className="mt-auto flex items-center justify-between border-t border-white/10 p-5 pt-4">
+        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <Users className="h-4 w-4" />
+          <span>{donorCount} donors</span>
+        </div>
+        {!hideDonate ? (
+          <Link href={`/campaigns/${id}`}>
+            <motion.span
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition-colors duration-200 hover:bg-blue-500"
+            >
+              <Heart className="h-3.5 w-3.5" />
+              Donate
+            </motion.span>
+          </Link>
+        ) : null}
+      </div>
+    </motion.div>
   );
-}
+});
