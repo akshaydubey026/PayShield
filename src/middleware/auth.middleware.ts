@@ -5,6 +5,13 @@ export type AuthedRequest = Request & {
   user?: { id: string; email: string; role: string };
 };
 
+export function adminOnly(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (req.user?.role !== "ADMIN") {
+    return res.status(403).json({ error: "Admin only" });
+  }
+  next();
+}
+
 export function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
