@@ -24,8 +24,23 @@ export type Donation = {
   status: string;
   createdAt: string;
   stripeSessionId?: string | null;
+  riskScore?: number;
+  fraudFlags?: string[];
   campaign?: { id: string; title: string; imageUrl?: string | null; category?: string };
   donor?: { name: string };
+};
+
+export type DonorSummary = {
+  totalDonated: number;
+  campaignsSupported: number;
+  totalDonations: number;
+  impactScore: string;
+  recentDonations: Array<{
+    id: string;
+    amount: number;
+    createdAt: string;
+    campaign: { id: string; title: string };
+  }>;
 };
 
 export type VerifyDonationResult = {
@@ -73,8 +88,33 @@ export async function verifyDonation(sessionId: string): Promise<VerifyDonationR
 }
 
 export async function getMyDonations() {
-  const { data } = await api.get<{ success: boolean; donations: Donation[] }>(
+  const { data } = await api.get<{ success?: boolean; donations?: Donation[] }>(
     "/api/donations/my-donations"
   );
   return data.donations ?? [];
+}
+
+export async function getDonorSummary() {
+  const { data } = await api.get<DonorSummary>("/api/stats/donor-summary");
+  return data;
+}
+
+export type MyCampaignRow = {
+  id: string;
+  title: string;
+  description: string;
+  goalAmount: number;
+  raisedAmount: number;
+  category: string;
+  imageUrl: string | null;
+  isActive: boolean;
+  createdAt: string;
+  totalRaised: number;
+  donationCount: number;
+  progressPercent: number;
+};
+
+export async function getMyCampaigns() {
+  const { data } = await api.get<{ campaigns: MyCampaignRow[] }>("/api/campaigns/my");
+  return data.campaigns ?? [];
 }

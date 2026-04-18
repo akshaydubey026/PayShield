@@ -1,36 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Search, X } from "lucide-react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import { Plus, Search, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getAllCampaigns, type Campaign } from "@/lib/campaigns";
+import { getAllCampaigns } from "@/lib/campaigns";
 import { CampaignCard } from "@/components/campaigns/CampaignCard";
+import { queryKeys } from "@/lib/queryKeys";
+import { useAuth } from "@/lib/auth";
 
 const CATEGORIES = ["All", "Education", "Health", "Environment", "Relief", "Elderly"];
 
 export default function CampaignsPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
-  
+  const { user } = useAuth();
+  const { data: campaigns = [], isLoading: loading } = useQuery({
+    queryKey: queryKeys.campaigns,
+    queryFn: () => getAllCampaigns(),
+  });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
-
-  useEffect(() => {
-    let mounted = true;
-    getAllCampaigns()
-      .then((data) => {
-        if (mounted) {
-          setCampaigns(data);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (mounted) setLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const filteredCampaigns = campaigns.filter(campaign => {
     const matchesSearch = searchQuery === '' || 
@@ -45,19 +35,26 @@ export default function CampaignsPage() {
     <div className="mx-auto max-w-7xl scroll-pt-32">
       
       {/* Header — NOT sticky */}
-      <div className="mb-6 ">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-1 h-6 bg-blue-500 rounded-full" />
-          <span className="text-blue-400 text-sm font-medium tracking-wide uppercase">
-            Verified Causes
-          </span>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="h-6 w-1 rounded-full bg-blue-500" />
+            <span className="text-sm font-medium uppercase tracking-wide text-blue-400">Verified Causes</span>
+          </div>
+          <h1 className="mb-2 text-4xl font-bold text-white">Discover Campaigns</h1>
+          <p className="max-w-2xl text-base text-gray-400">
+            Every donation is protected by PayShield&apos;s real-time fraud detection algorithms, ensuring your impact reaches the intended hands.
+          </p>
         </div>
-        <h1 className="text-4xl font-bold text-white mb-2">
-          Discover Campaigns
-        </h1>
-        <p className="text-gray-400 text-base max-w-2xl">
-          Every donation is protected by PayShield&apos;s real-time fraud detection algorithms, ensuring your impact reaches the intended hands.
-        </p>
+        {user && ["ADMIN", "CREATOR"].includes(user.role) && (
+          <Link
+            href="/campaigns/create"
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+          >
+            <Plus className="size-4" />
+            New campaign
+          </Link>
+        )}
       </div>
 
       {/* Stats row — NOT sticky

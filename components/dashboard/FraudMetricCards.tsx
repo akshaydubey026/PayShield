@@ -30,9 +30,19 @@ export function FraudMetricCards({
           dots: true,
         },
       ].map((s, i) => (
-        <div key={i} className="rounded-2xl border border-white/10 bg-[#0A0F1E] p-6 shadow-xl">
-          <p className="text-sm font-medium text-slate-400">{s.label}</p>
-          <p className={`mt-2 text-3xl font-bold ${s.color}`}>{s.value}</p>
+        <div
+          key={i}
+          className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1E] p-6 shadow-xl"
+        >
+          <p className="truncate text-sm font-medium text-slate-400" title={String(s.label)}>
+            {s.label}
+          </p>
+          <p
+            className={`mt-2 min-w-0 max-w-full break-words text-[clamp(0.875rem,0.55rem+1.35vmin,1.75rem)] font-bold tabular-nums leading-tight ${s.color}`}
+            title={typeof s.value === "string" ? s.value : undefined}
+          >
+            {s.value}
+          </p>
           {s.dots ? (
             <span className="mt-2 flex items-center gap-1">
               <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />

@@ -1,73 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Heart, CheckCircle2, XCircle, Clock3 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Heart, CheckCircle, ShieldX } from "lucide-react";
 import { getMyDonations, type Donation } from "@/lib/campaigns";
 import Link from "next/link";
+import { queryKeys } from "@/lib/queryKeys";
+import { useAuth } from "@/lib/auth";
 
 export default function MyDonationsPage() {
-  const [donations, setDonations] = useState<Donation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAuth();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = () => {
-      setLoading(true);
-      getMyDonations()
-        .then((data) => {
-          if (!cancelled) {
-            setDonations(data);
-            setLoading(false);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setLoading(false);
-        });
-    };
-
-    load();
-
-    const onVisible = () => {
-      if (document.visibilityState === "visible") load();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
-
-  const getStatusStyle = (status: string) => {
-    switch (status) {
-      case "SUCCESS": return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-      case "FAILED": return "bg-red-500/10 text-red-400 border-red-500/20";
-      default: return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-    }
-  };
+  const { data: donations = [], isLoading: loading } = useQuery({
+    queryKey: queryKeys.myDonations(user?.id ?? ""),
+    queryFn: getMyDonations,
+    enabled: !authLoading && !!user?.id,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
 
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("en-GB", {
-      day: "2-digit",
+      day: "numeric",
       month: "short",
       year: "numeric",
     });
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "SUCCESS": return <CheckCircle2 className="size-4" />;
-      case "FAILED": return <XCircle className="size-4" />;
-      default: return <Clock3 className="size-4" />;
-    }
-  };
-
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="mx-auto max-w-5xl space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-white flex items-center gap-3">
+        <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight text-white">
           <Heart className="size-8 text-blue-500" /> My Donations
         </h1>
-        <p className="mt-2 text-slate-400">Track your contributions and fraud-prevention stats.</p>
+        <p className="mt-2 text-slate-400">Your completed and security-reviewed contributions.</p>
       </div>
 
       {loading ? (
@@ -81,39 +46,45 @@ export default function MyDonationsPage() {
           ))}
         </div>
       ) : donations.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02]">
-          <Heart className="mb-4 size-12 text-slate-600" />
-          <p className="text-lg text-slate-400">No donations yet. Support a campaign to get started!</p>
-          <Link href="/campaigns" className="mt-4 text-blue-400 hover:underline">Browse Campaigns</Link>
+        <div className="py-20 text-center">
+          <Heart className="mx-auto mb-4 size-12 text-gray-600" />
+          <p className="text-lg text-gray-400">No donations yet</p>
+          <p className="mb-6 text-sm text-gray-500">Support a campaign to see your donations here</p>
+          <Link
+            href="/campaigns"
+            className="inline-block rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
+          >
+            Browse Campaigns
+          </Link>
         </div>
       ) : (
         <div className="space-y-4">
-          {donations.map((d) => (
+          {donations.map((d: Donation) => (
             <div
               key={d.id}
-              className="rounded-2xl border border-white/10 bg-[#0A0F1E] p-5 transition-colors hover:bg-white/[0.03]"
+              className="rounded-2xl border border-white/[0.08] bg-white/5 p-5"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="mb-3 flex items-start justify-between">
                 <div>
-                  <p className="text-base font-semibold text-white">{d.campaign?.title ?? "Unknown Campaign"}</p>
-                  <span className="mt-2 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
-                    {d.campaign?.category ?? "General"}
-                  </span>
+                  <h3 className="font-semibold text-white">{d.campaign?.title ?? "Campaign"}</h3>
+                  <span className="text-xs text-gray-400">{d.campaign?.category ?? "General"}</span>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-bold text-white">₹{d.amount.toLocaleString("en-IN")}</p>
-                  <p className="text-xs text-slate-500">{formatDate(d.createdAt)}</p>
+                  <p className="text-lg font-bold text-white">₹{d.amount.toLocaleString("en-IN")}</p>
+                  <p className="text-xs text-gray-500">{formatDate(d.createdAt)}</p>
                 </div>
               </div>
-
-              <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusStyle(d.status)}`}
-                >
-                  {getStatusIcon(d.status)} {d.status}
-                </span>
-                {d.stripeSessionId ? (
-                  <span className="text-xs text-slate-500">Session: {d.stripeSessionId.slice(0, 14)}...</span>
+              <div className="flex items-center justify-between border-t border-white/5 pt-3">
+                {d.status === "SUCCESS" ? (
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-400">
+                    <CheckCircle className="size-4" />
+                    Donated Successfully
+                  </span>
+                ) : d.status === "BLOCKED" ? (
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-red-400">
+                    <ShieldX className="size-4" />
+                    Blocked for Security
+                  </span>
                 ) : null}
               </div>
             </div>

@@ -11,16 +11,16 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import axios from "axios";
 import { api } from "./api";
-import { API_URL } from "./env";
 import { setAccessToken, getAccessToken } from "./access-token";
+import { refreshAccessTokenSingleFlight } from "./auth-refresh";
 
 export type AuthUser = {
   id: string;
   name: string;
   email: string;
   role: string;
+  createdAt?: string;
 };
 
 type AuthContextValue = {
@@ -30,6 +30,7 @@ type AuthContextValue = {
   /** Hydration complete: `!loading`. Kept for existing call sites. */
   ready: boolean;
   accessToken: string | null;
+  setUser: (user: AuthUser | null) => void;
   login: (email: string, password: string) => Promise<void>;
   register: (payload: {
     name: string;
@@ -45,7 +46,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUserState] = useState<AuthUser | null>(null);
+
+  const setUser = useCallback((next: AuthUser | null) => {
+    setUserState(next);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [accessToken, setAccessTokenState] = useState<string | null>(null);
   const sessionRevision = useRef(0);
@@ -58,17 +63,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshSession = useCallback(async () => {
     const rev = sessionRevision.current;
     try {
-      const { data } = await axios.post<{
-        accessToken: string;
-        user: AuthUser;
-      }>(`${API_URL}/api/auth/refresh`, {}, { withCredentials: true });
+      const data = await refreshAccessTokenSingleFlight();
       if (rev !== sessionRevision.current) return;
       syncToken(data.accessToken);
-      setUser(data.user);
+      setUserState(data.user);
     } catch {
       if (rev !== sessionRevision.current) return;
       syncToken(null);
-      setUser(null);
+      setUserState(null);
     }
   }, [syncToken]);
 
@@ -80,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (getAccessToken()) {
           try {
             const { data } = await api.get<{ user: AuthUser }>("/api/auth/me");
-            setUser(data.user);
+            setUserState(data.user);
           } catch {
             /* keep user from refresh if /me fails */
           }
@@ -100,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         { email, password }
       );
       syncToken(data.accessToken);
-      setUser(data.user);
+      setUserState(data.user);
       setLoading(false);
     },
     [syncToken]
@@ -119,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         payload
       );
       syncToken(data.accessToken);
-      setUser(data.user);
+      setUserState(data.user);
       setLoading(false);
     },
     [syncToken]
@@ -136,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } finally {
       syncToken(null);
-      setUser(null);
+      setUserState(null);
       router.push("/");
     }
   }, [router, syncToken, refreshSession]);
@@ -147,12 +149,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       ready: !loading,
       accessToken,
+      setUser,
       login,
       register,
       logout,
       refreshSession,
     }),
-    [user, loading, accessToken, login, register, logout, refreshSession]
+    [user, loading, accessToken, setUser, login, register, logout, refreshSession]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

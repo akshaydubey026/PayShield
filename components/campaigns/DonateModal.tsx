@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, CheckCircle2, ShieldX, Loader2, ArrowLeft, Clock } from "lucide-react";
 import { createDonationOrder } from "@/lib/campaigns";
@@ -48,6 +49,11 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
     flags: string[];
     signals: Record<string, number>;
   } | null>(null);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -114,13 +120,20 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Full-viewport blur: keep tint light so backdrop-filter stays visible (heavy bg-black/x hides blur). */}
+      <div
+        className="absolute inset-0 bg-slate-950/55 backdrop-blur-xl backdrop-saturate-150"
+        aria-hidden
+      />
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1E] shadow-2xl"
+        className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1E] shadow-2xl"
       >
         <button
           onClick={onClose}
@@ -303,6 +316,7 @@ export function DonateModal({ isOpen, onClose, campaignId, campaignTitle, onSucc
           </AnimatePresence>
         </div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }
