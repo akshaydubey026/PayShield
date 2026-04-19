@@ -59,13 +59,6 @@ To run PayShield perfectly locally on your machine, launch the backend database 
 ### 1. The Database (Docker)
 Since local Windows environments occasionally bind ghostly generic PostgreSQL instances to default ports, PayShield handles its core database natively on **Port 5433** to escape port conflicts permanently.
 
-Wipe any old local instances (if any exist) and boot up the persistent database terminal:
-```bash
-docker rm -f payshield-postgres-clean
-docker volume prune -f
-docker run --name payshield-postgres-clean -e POSTGRES_PASSWORD=mysecret123 -p 5433:5432 -d postgres
-```
-
 ### 2. The Backend Server
 Launch the main Prisma connection & Express engine:
 
