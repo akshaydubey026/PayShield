@@ -74,14 +74,6 @@ cd backend
 ```
 
 Ensure `backend/.env` is identical to:
-```env
-DATABASE_URL="postgresql://postgres:mysecret123@localhost:5433/payshield?schema=public"
-JWT_SECRET="payshield_dev_access_secret_min_32_chars!!"
-JWT_REFRESH_SECRET="payshield_dev_refresh_secret_min_32!"
-PORT=5000
-FRONTEND_ORIGIN="http://localhost:3000"
-NODE_ENV=development
-```
 
 Push the Prisma Schema directly into the DB:
 ```bash
@@ -142,7 +134,3 @@ View Kafka topics (Kafka UI):
 ```text
 open http://localhost:8080
 ```
-
-Point `backend/.env` `DATABASE_URL` at `localhost:5433` when using the Compose Postgres service above.
-=======
->>>>>>> 381246e71cc1129493062d6422b9522e4cde374a
