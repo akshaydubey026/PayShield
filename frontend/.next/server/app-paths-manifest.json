@@ -1,0 +1,13 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/landing/page": "app/landing/page.js",
+  "/page": "app/page.js",
+  "/(main)/campaigns/[id]/page": "app/(main)/campaigns/[id]/page.js",
+  "/(main)/campaigns/page": "app/(main)/campaigns/page.js",
+  "/(main)/fraud-demo/page": "app/(main)/fraud-demo/page.js",
+  "/(main)/dashboard/page": "app/(main)/dashboard/page.js",
+  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/(auth)/register/page": "app/(auth)/register/page.js",
+  "/(main)/my-donations/page": "app/(main)/my-donations/page.js"
+}
