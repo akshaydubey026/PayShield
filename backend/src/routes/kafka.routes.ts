@@ -24,7 +24,7 @@ kafkaRouter.get("/stats", async (_req, res) => {
     ]);
 
     const flagCounts = await Promise.all(
-      keys.map(async (key) => {
+      (keys as string[]).map(async (key: string) => {
         const count = await redis.get(key);
         const [, , flag] = key.split(":");
         return {
@@ -35,7 +35,7 @@ kafkaRouter.get("/stats", async (_req, res) => {
       })
     );
 
-    const topFlags = flagCounts.sort((a, b) => b.count - a.count).slice(0, 5);
+    const topFlags = flagCounts.sort((a: { flag: string; label: string; count: number }, b: { flag: string; label: string; count: number }) => b.count - a.count).slice(0, 5);
 
     return res.json({
       today: {

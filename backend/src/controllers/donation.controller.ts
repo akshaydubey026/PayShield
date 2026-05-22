@@ -423,8 +423,7 @@ export async function myDonations(req: AuthedRequest, res: Response) {
     const donations = await prisma.donation.findMany({
       where: {
         donorId: req.user.id,
-        status: { in: ["SUCCESS", "BLOCKED"] },
-        source: { not: "simulation" },
+        status: { in: ["SUCCESS", "BLOCKED"] as DonationStatus[] },
       },
       select: {
         id: true,
