@@ -18,7 +18,6 @@ export async function donorSummary(req: AuthedRequest, res: Response) {
   const donorLiveSuccessWhere = {
     donorId: userId,
     status: "SUCCESS" as const,
-    source: { not: "simulation" },
   };
 
   try {

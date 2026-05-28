@@ -19,11 +19,21 @@ import { startFraudAnalyticsConsumer } from "./consumers/fraudAnalytics.consumer
 const app = express();
 
 // ─────────────────────────────────────────────
-// CORS — Allow frontend origin with credentials
+// CORS — Allow frontend origin(s) with credentials
+// FRONTEND_ORIGIN may be a comma-separated list, e.g.:
+//   https://payshield.vercel.app,http://localhost:3000
 // ─────────────────────────────────────────────
+const allowedOrigins = env.FRONTEND_ORIGIN.split(",").map((o) => o.trim());
 app.use(
   cors({
-    origin: env.FRONTEND_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (server-to-server, curl, etc.)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
     credentials: true,
   })
 );

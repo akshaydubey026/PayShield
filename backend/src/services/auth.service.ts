@@ -15,20 +15,24 @@ const REFRESH_COOKIE = "refreshToken";
 const SALT_ROUNDS = 12;
 
 function setRefreshCookie(res: Response, refreshToken: string) {
+  const isProduction = env.NODE_ENV === "production";
   res.cookie(REFRESH_COOKIE, refreshToken, {
     httpOnly: true,
-    secure: env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProduction,
+    // "none" is required for cross-origin cookie sharing (Vercel ↔ Render).
+    // Browsers block sameSite:"lax" cookies on cross-site requests.
+    sameSite: isProduction ? "none" : "lax",
     maxAge: REFRESH_EXPIRES_MS,
     path: "/",
   });
 }
 
 function clearRefreshCookie(res: Response) {
+  const isProduction = env.NODE_ENV === "production";
   res.clearCookie(REFRESH_COOKIE, {
     httpOnly: true,
-    secure: env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     path: "/",
   });
 }

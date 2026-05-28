@@ -39,13 +39,13 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config as typeof error.config & { _retry?: boolean };
+    const requestUrl = String(error.config?.url ?? "");
     if (
       error.response?.status === 401 &&
       !original?._retry &&
-      original?.url &&
-      !String(original.url).includes("/api/auth/refresh") &&
-      !String(original.url).includes("/api/auth/login") &&
-      !String(original.url).includes("/api/auth/register")
+      !requestUrl.includes("/api/auth/refresh") &&
+      !requestUrl.includes("/api/auth/login") &&
+      !requestUrl.includes("/api/auth/register")
     ) {
       original._retry = true;
       if (isRefreshing) {
