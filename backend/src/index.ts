@@ -29,10 +29,20 @@ app.use(
     origin: (origin, callback) => {
       // Allow requests with no origin (server-to-server, curl, etc.)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
+
+      const cleanOrigin = origin.trim().replace(/\/$/, "");
+      const isAllowed =
+        allowedOrigins.some((allowed) => allowed.trim().replace(/\/$/, "") === cleanOrigin) ||
+        cleanOrigin.endsWith(".vercel.app") ||
+        /^https?:\/\/localhost(:\d+)?$/.test(cleanOrigin) ||
+        /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(cleanOrigin);
+
+      if (isAllowed) {
         return callback(null, true);
       }
-      return callback(new Error(`CORS: origin ${origin} not allowed`));
+
+      console.warn(`[CORS] Blocked request from origin: ${origin}`);
+      return callback(null, false);
     },
     credentials: true,
   })
