@@ -1,13 +1,23 @@
-import { producer } from "../config/kafka.config.js";
+import { producer, isKafkaEnabled } from "../config/kafka.config.js";
 import { TOPICS } from "../config/topics.config.js";
 
 let isProducerConnected = false;
+let isKafkaAvailable = isKafkaEnabled;
 
 export async function connectProducer() {
+  if (!isKafkaAvailable) {
+    return;
+  }
   if (!isProducerConnected) {
-    await producer.connect();
-    isProducerConnected = true;
-    console.log("✅ Kafka producer connected");
+    try {
+      await producer.connect();
+      isProducerConnected = true;
+      console.log("✅ Kafka producer connected");
+    } catch (err) {
+      isKafkaAvailable = false;
+      console.error("❌ Kafka producer connection failed, disabling Kafka helper:", err);
+      throw err;
+    }
   }
 }
 
@@ -16,41 +26,48 @@ export async function publishEvent(
   payload: Record<string, any>,
   key?: string
 ) {
-  if (!isProducerConnected) await connectProducer();
+  if (!isKafkaAvailable) return;
 
-  const message = {
-    key: key || null,
-    value: JSON.stringify({
-      ...payload,
-      _meta: {
-        timestamp: new Date().toISOString(),
-        topic,
-        version: "1.0",
-      },
-    }),
-  };
+  try {
+    if (!isProducerConnected) await connectProducer();
+    if (!isProducerConnected) return;
 
-  await producer.send({ topic, messages: [message] });
-  console.log(`📤 Event published -> ${topic}`, { key });
-
-  if (topic !== TOPICS.AUDIT_LOG) {
-    await producer.send({
-      topic: TOPICS.AUDIT_LOG,
-      messages: [
-        {
-          key: key || null,
-          value: JSON.stringify({
-            topic,
-            payload,
-            _meta: {
-              timestamp: new Date().toISOString(),
-              topic: TOPICS.AUDIT_LOG,
-              version: "1.0",
-            },
-          }),
+    const message = {
+      key: key || null,
+      value: JSON.stringify({
+        ...payload,
+        _meta: {
+          timestamp: new Date().toISOString(),
+          topic,
+          version: "1.0",
         },
-      ],
-    });
+      }),
+    };
+
+    await producer.send({ topic, messages: [message] });
+    console.log(`📤 Event published -> ${topic}`, { key });
+
+    if (topic !== TOPICS.AUDIT_LOG) {
+      await producer.send({
+        topic: TOPICS.AUDIT_LOG,
+        messages: [
+          {
+            key: key || null,
+            value: JSON.stringify({
+              topic,
+              payload,
+              _meta: {
+                timestamp: new Date().toISOString(),
+                topic: TOPICS.AUDIT_LOG,
+                version: "1.0",
+              },
+            }),
+          },
+        ],
+      });
+    }
+  } catch (err) {
+    console.error(`❌ Failed to publish to ${topic}:`, err);
   }
 }
 

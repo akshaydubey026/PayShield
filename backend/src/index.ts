@@ -15,6 +15,7 @@ import { connectProducer } from "./services/kafka.service.js";
 import { startNotificationConsumer } from "./consumers/notification.consumer.js";
 import { startAuditLoggerConsumer } from "./consumers/auditLogger.consumer.js";
 import { startFraudAnalyticsConsumer } from "./consumers/fraudAnalytics.consumer.js";
+import { isKafkaEnabled } from "./config/kafka.config.js";
 
 const app = express();
 
@@ -104,6 +105,10 @@ app.use(
 // Start Server
 // ─────────────────────────────────────────────
 async function startKafkaServices() {
+  if (!isKafkaEnabled) {
+    console.log("⚠️  Kafka is disabled (no remote broker configured or DISABLE_KAFKA=true)");
+    return;
+  }
   try {
     await connectProducer();
     await startNotificationConsumer();
